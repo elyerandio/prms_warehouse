@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	_ "github.com/alexbrainman/odbc"
+	"github.com/go-sql-driver/mysql"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
 )
@@ -341,11 +343,8 @@ func main() {
 	if len(os.Args) != 3 {
 		panic("Argument count less than 2")
 	} else {
-		fmt.Printf("os.Args[0] = %s\n", os.Args[0])
 		startDate := os.Args[1]
 		endDate := os.Args[2]
-		fmt.Printf("os.Args[1] = %s\n", startDate)
-		fmt.Printf("os.Args[2] = %s\n", endDate)
 		dateStart, dateEnd = checkDates(startDate, endDate)
 	}
 	dbOdbc, err = sqlx.Open("odbc", fmt.Sprintf("DSN=%s; UID=%s; PWD=%s;", "MDC", "APC", "APPS7OWNER"))
@@ -422,6 +421,8 @@ func getNewCustomerTableName() string {
 }
 
 func createCustomerTable(tlbName string) {
+	var dbErr *mysql.MySQLError
+
 	stmt := `CREATE TABLE ` + tlbName + ` (
 		ACTIV char(1),
 		CMPNO int(10),
@@ -744,7 +745,22 @@ func createCustomerTable(tlbName string) {
 
 	_, err := dbMysql.Exec(stmt)
 	if err != nil {
-		panic(fmt.Sprintf("%#v", err))
+		if errors.As(err, &dbErr) {
+			// table already exists error
+			if dbErr.Number == 1050 {
+				clearTable(tlbName)
+			}
+		} else {
+			panic(err)
+		}
+	}
+}
+
+func clearTable(tblName string) {
+	sql := fmt.Sprintf("TRUNCATE TABLE %s", tblName)
+	_, err := dbMysql.Exec(sql)
+	if err != nil {
+		panic(err)
 	}
 }
 
