@@ -548,6 +548,8 @@ func createVendorTable(tblName string) {
 			// table already exists error
 			if dbErr.Number == 1050 {
 				clearTable(tblName)
+			} else {
+				panic(err)
 			}
 		} else {
 			panic(err)

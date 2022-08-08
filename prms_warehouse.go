@@ -47,4 +47,13 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+
+	// call program to create ap header table
+	cmd = exec.Command("prms_apheader.exe", sdat.Format("2006-01-02"), edat.Format("2006-01-02"))
+	cmd.Stdout = os.Stdout
+	err = cmd.Run()
+
+	if err != nil {
+		panic(err)
+	}
 }

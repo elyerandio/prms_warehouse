@@ -749,6 +749,8 @@ func createCustomerTable(tlbName string) {
 			// table already exists error
 			if dbErr.Number == 1050 {
 				clearTable(tlbName)
+			} else {
+				panic(err)
 			}
 		} else {
 			panic(err)
