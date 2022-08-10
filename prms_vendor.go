@@ -240,22 +240,27 @@ var (
 
 func main() {
 	var err error
+	var odbcConnectStr string
+	var mysqlConnectStr string
 
-	if len(os.Args) != 3 {
-		panic("Argument count less than 2")
+	if len(os.Args) != 5 {
+		panic("Argument count less than 4")
 	} else {
-		startDate := os.Args[1]
-		endDate := os.Args[2]
+		odbcConnectStr = os.Args[1]
+		mysqlConnectStr = os.Args[2]
+		startDate := os.Args[3]
+		endDate := os.Args[4]
 		dateStart, dateEnd = checkDates(startDate, endDate)
 	}
 
-	dbOdbc, err = sqlx.Open("odbc", fmt.Sprintf("DSN=%s; UID=%s; PWD=%s;", "MDC", "APC", "APPS7OWNER"))
+	dbOdbc, err = sqlx.Open("odbc", odbcConnectStr)
 	if err != nil {
 		panic(err)
 	}
 	defer dbOdbc.Close()
 
-	dbMysql, err = sqlx.Open("mysql", "root:justdoit@/prms?charset=utf8&parseTime=True&loc=Local")
+	// dbMysql, err = sqlx.Open("mysql", "root:justdoit@/prms?charset=utf8&parseTime=True&loc=Local")
+	dbMysql, err = sqlx.Open("mysql", mysqlConnectStr)
 	if err != nil {
 		panic(err)
 	}

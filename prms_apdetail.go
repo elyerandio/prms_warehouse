@@ -26,6 +26,7 @@ type Invoice struct {
 	AUDDT time.Time `db:"AUDDT"`
 	AUDTM int       `db:"AUDTM"`
 	ABTCH int       `db:"ABTCH"`
+	SEQNO int       `db:"SEQNO"`
 	APAMT float64   `db:"APAMT"`
 	FAPAM float64   `db:"FAPAM"`
 	DISCT float64   `db:"DISCT"`
@@ -50,68 +51,21 @@ type Invoice struct {
 	IEDSC float64   `db:"IEDSC"`
 	A1099 int       `db:"A1099"`
 	GLCMP int       `db:"GLCMP"`
-	INDSC string    `db:"INDSC"`
-	VCHNO int       `db:"VCHNO"`
-	OPERD int       `db:"OPERD"`
-	BNACT string    `db:"BNACT"`
-	APAGL float64   `db:"APAGL"`
-	ADAMT float64   `db:"ADAMT"`
-	FADAM float64   `db:"FADAM"`
-	REMAN float64   `db:"REMAN"`
-	FREMN float64   `db:"FREMN"`
-	DISCA float64   `db:"DISCA"`
-	FDSCA float64   `db:"FDSCA"`
-	TDSCT float64   `db:"TDSCT"`
-	FTDST float64   `db:"FTDST"`
-	TDSCA float64   `db:"TDSCA"`
-	FTDSA float64   `db:"FTDSA"`
-	DISCP float64   `db:"DISCP"`
-	PURCH int       `db:"PURCH"`
-	RECVN int       `db:"RECV#"`
-	APIDT time.Time `db:"APIDT"`
-	APDDT time.Time `db:"APDDT"`
-	APCDT time.Time `db:"APCDT"`
-	NXSEQ int       `db:"NXSEQ"`
-	APLDT time.Time `db:"APLDT"`
-	IVENT string    `db:"IVENT"`
-	PYHLD string    `db:"PYHLD"`
-	PYNXT string    `db:"PYNXT"`
-	AFDSC string    `db:"AFDSC"`
-	ASDSC string    `db:"ASDSC"`
-	ICOMP string    `db:"ICOMP"`
-	COMPL string    `db:"COMPL"`
-	A1CUR string    `db:"A1CUR"`
-	A1OER float64   `db:"A1OER"`
-	APMER string    `db:"APMER"`
-	A1CER float64   `db:"A1CER"`
-	APUGA float64   `db:"APUGA"`
-	APRGA float64   `db:"APRGA"`
-	INRSN string    `db:"INRSN"`
-	TDSCL float64   `db:"TDSCL"`
-	FTDSL float64   `db:"FTDSL"`
-	ORGIN float64   `db:"ORGIN"`
-	FORIN float64   `db:"FORIN"`
-	SLPAY string    `db:"SLPAY"`
-	VALPH string    `db:"VALPH"`
-	A1TXA float64   `db:"A1TXA"`
-	A1TXR float64   `db:"A1TXR"`
-	A1TGA float64   `db:"A1TGA"`
-	A1GPF string    `db:"A1GPF"`
-	A1PVT string    `db:"A1PVT"`
-	A1FTX float64   `db:"A1FTX"`
-	A1FGA float64   `db:"A1FGA"`
-	A1PYC string    `db:"A1PYC"`
-	A1SPC string    `db:"A1SPC"`
-	A1DDT time.Time `db:"A1DDT"`
-	A1DPF string    `db:"A1DPF"`
-	A1TXP string    `db:"A1TXP"`
-	A1ASC string    `db:"A1ASC"`
-	A1REL int       `db:"A1REL"`
-	APUGN int       `db:"APUGN"`
-	APULS int       `db:"APULS"`
-	APRGN int       `db:"APRGN"`
-	APRLS int       `db:"APRLS"`
-	APIGL int       `db:"APIGL"`
+	A2VTR float64   `db:"A2VTR"`
+	A2TGA float64   `db:"A2TGA"`
+	A2GPF string    `db:"A2GPF"`
+	A2PVT string    `db:"A2PVT"`
+	A2FGA float64   `db:"A2FGA"`
+	A2PYC string    `db:"A2PYC"`
+	A2SPC string    `db:"A2SPC"`
+	A2DDT time.Time `db:"A2DDT"`
+	A2DPF string    `db:"A2DPF"`
+	A2ASC string    `db:"A2ASC"`
+	APUGN float64   `db:"APUGN"`
+	APULS float64   `db:"APULS"`
+	APRGN float64   `db:"APRGN"`
+	APRLS float64   `db:"APRLS"`
+	APIGL float64   `db:"APIGL"`
 }
 
 type Invoice2 struct {
@@ -126,6 +80,7 @@ type Invoice2 struct {
 	AUDDT time.Time `db:"AUDDT"`
 	AUDTM int       `db:"AUDTM"`
 	ABTCH int       `db:"ABTCH"`
+	SEQNO int       `db:"SEQNO"`
 	APAMT float64   `db:"APAMT"`
 	FAPAM float64   `db:"FAPAM"`
 	DISCT float64   `db:"DISCT"`
@@ -150,68 +105,21 @@ type Invoice2 struct {
 	IEDSC float64   `db:"IEDSC"`
 	A1099 int       `db:"A1099"`
 	GLCMP int       `db:"GLCMP"`
-	INDSC string    `db:"INDSC"`
-	VCHNO int       `db:"VCHNO"`
-	OPERD int       `db:"OPERD"`
-	BNACT string    `db:"BNACT"`
-	APAGL float64   `db:"APAGL"`
-	ADAMT float64   `db:"ADAMT"`
-	FADAM float64   `db:"FADAM"`
-	REMAN float64   `db:"REMAN"`
-	FREMN float64   `db:"FREMN"`
-	DISCA float64   `db:"DISCA"`
-	FDSCA float64   `db:"FDSCA"`
-	TDSCT float64   `db:"TDSCT"`
-	FTDST float64   `db:"FTDST"`
-	TDSCA float64   `db:"TDSCA"`
-	FTDSA float64   `db:"FTDSA"`
-	DISCP float64   `db:"DISCP"`
-	PURCH int       `db:"PURCH"`
-	RECVN int       `db:"RECVN"`
-	APIDT time.Time `db:"APIDT"`
-	APDDT time.Time `db:"APDDT"`
-	APCDT time.Time `db:"APCDT"`
-	NXSEQ int       `db:"NXSEQ"`
-	APLDT time.Time `db:"APLDT"`
-	IVENT string    `db:"IVENT"`
-	PYHLD string    `db:"PYHLD"`
-	PYNXT string    `db:"PYNXT"`
-	AFDSC string    `db:"AFDSC"`
-	ASDSC string    `db:"ASDSC"`
-	ICOMP string    `db:"ICOMP"`
-	COMPL string    `db:"COMPL"`
-	A1CUR string    `db:"A1CUR"`
-	A1OER float64   `db:"A1OER"`
-	APMER string    `db:"APMER"`
-	A1CER float64   `db:"A1CER"`
-	APUGA float64   `db:"APUGA"`
-	APRGA float64   `db:"APRGA"`
-	INRSN string    `db:"INRSN"`
-	TDSCL float64   `db:"TDSCL"`
-	FTDSL float64   `db:"FTDSL"`
-	ORGIN float64   `db:"ORGIN"`
-	FORIN float64   `db:"FORIN"`
-	SLPAY string    `db:"SLPAY"`
-	VALPH string    `db:"VALPH"`
-	A1TXA float64   `db:"A1TXA"`
-	A1TXR float64   `db:"A1TXR"`
-	A1TGA float64   `db:"A1TGA"`
-	A1GPF string    `db:"A1GPF"`
-	A1PVT string    `db:"A1PVT"`
-	A1FTX float64   `db:"A1FTX"`
-	A1FGA float64   `db:"A1FGA"`
-	A1PYC string    `db:"A1PYC"`
-	A1SPC string    `db:"A1SPC"`
-	A1DDT time.Time `db:"A1DDT"`
-	A1DPF string    `db:"A1DPF"`
-	A1TXP string    `db:"A1TXP"`
-	A1ASC string    `db:"A1ASC"`
-	A1REL int       `db:"A1REL"`
-	APUGN int       `db:"APUGN"`
-	APULS int       `db:"APULS"`
-	APRGN int       `db:"APRGN"`
-	APRLS int       `db:"APRLS"`
-	APIGL int       `db:"APIGL"`
+	A2VTR float64   `db:"A2VTR"`
+	A2TGA float64   `db:"A2TGA"`
+	A2GPF string    `db:"A2GPF"`
+	A2PVT string    `db:"A2PVT"`
+	A2FGA float64   `db:"A2FGA"`
+	A2PYC string    `db:"A2PYC"`
+	A2SPC string    `db:"A2SPC"`
+	A2DDT time.Time `db:"A2DDT"`
+	A2DPF string    `db:"A2DPF"`
+	A2ASC string    `db:"A2ASC"`
+	APUGN float64   `db:"APUGN"`
+	APULS float64   `db:"APULS"`
+	APRGN float64   `db:"APRGN"`
+	APRLS float64   `db:"APRLS"`
+	APIGL float64   `db:"APIGL"`
 }
 
 var (
@@ -243,14 +151,13 @@ func main() {
 	defer dbOdbc.Close()
 
 	// dbMysql, err = sqlx.Open("mysql", "root:justdoit@/prms?charset=utf8&parseTime=True&loc=Local")
-	// dbMysql, err = sqlx.Open("mysql", "edpdev:edpdev777@tcp(172.20.0.39:3306)/prms_ap?charset=utf8&parseTime=True&loc=Local")
 	dbMysql, err = sqlx.Open("mysql", mysqlConnectStr)
 	if err != nil {
 		panic(err)
 	}
 	defer dbMysql.Close()
 
-	processAPHeaderTable()
+	processAPDetailTable()
 }
 
 func checkDates(startDate, endDate string) (time.Time, time.Time) {
@@ -267,7 +174,7 @@ func checkDates(startDate, endDate string) (time.Time, time.Time) {
 	return dateStart, dateEnd
 }
 
-func processAPHeaderTable() {
+func processAPDetailTable() {
 	invoice := Invoice{}
 	invoice2 := Invoice2{}
 	fields := DBFields(Invoice{})
@@ -275,12 +182,10 @@ func processAPHeaderTable() {
 	// fieldsCsvColons := fieldsCSVColons(fields)
 
 	fields2 := DBFields(Invoice2{})
-	fieldsCSV2 := fieldsCSV(fields2)
-	fieldsCSVColons2 := fieldsCSVColons(fields2)
+	fieldsCsv2 := fieldsCSV(fields2)
+	fieldsCsvColons2 := fieldsCSVColons(fields2)
 
-	// selectStmt := fmt.Sprintf("SELECT %s FROM MDMOD#.APAPL100 WHERE auddt BETWEEN '%s' AND '%s'",
-	// fieldsCsv, dateStart.Format("2006-01-02"), dateEnd.Format("2006-01-02"))
-	selectStmt := fmt.Sprintf("SELECT %s FROM RMSMDFL#.APAPP100 WHERE auddt BETWEEN '%s' AND '%s'",
+	selectStmt := fmt.Sprintf("SELECT %s FROM RMSMDFL#.APAPP200 WHERE aptdt BETWEEN '%s' AND '%s'",
 		fieldsCsv, dateStart.Format("2006-01-02"), dateEnd.Format("2006-01-02"))
 
 	rows, err := dbOdbc.Queryx(selectStmt)
@@ -289,13 +194,13 @@ func processAPHeaderTable() {
 	}
 	defer rows.Close()
 
-	newAPHeaderTable := getNewAPHeaderTableName()
-	createAPHeaderTable(newAPHeaderTable)
+	newAPDetailTable := getNewAPDetailTableName()
+	createAPDetailTable(newAPDetailTable)
 
-	insertStmt := fmt.Sprintf("INSERT INTO %s (%s) VALUES(%s)", newAPHeaderTable, fieldsCSV2,
-		fieldsCSVColons2)
+	insertStmt := fmt.Sprintf("INSERT INTO %s (%s) VALUES(%s)", newAPDetailTable, fieldsCsv2,
+		fieldsCsvColons2)
 	recCount := 0
-	fmt.Printf("\nTable Name : %s\n", newAPHeaderTable)
+	fmt.Printf("\nTable Name : %s\n", newAPDetailTable)
 	fmt.Printf("Record # : %8d", recCount)
 	for rows.Next() {
 		recCount++
@@ -315,14 +220,14 @@ func processAPHeaderTable() {
 	fmt.Println()
 }
 
-func getNewAPHeaderTableName() string {
+func getNewAPDetailTableName() string {
 	newDate := dateEnd.Format("200601")
 
-	newTableName := "apapp100_" + newDate[:6]
+	newTableName := "apapp200_" + newDate[:6]
 	return newTableName
 }
 
-func createAPHeaderTable(tblName string) {
+func createAPDetailTable(tblName string) {
 	var dbErr *mysql.MySQLError
 
 	stmt := `CREATE TABLE ` + tblName + `(
@@ -337,12 +242,13 @@ func createAPHeaderTable(tblName string) {
 		AUDDT date,
 		AUDTM int(6),
 		ABTCH int(5),
+		SEQNO int(3),
 		APAMT decimal(13,2),
 		FAPAM decimal(13,2),
 		DISCT decimal(13,2),
 		FDSCT decimal(13,2),
-		APEGL decimal(15),
-		APDGL decimal(15),
+		APEGL decimal(15,0),
+		APDGL decimal(15,0),
 		CHKNB int(6),
 		APTDT date,
 		PRDNO varchar(15),
@@ -352,8 +258,8 @@ func createAPHeaderTable(tblName string) {
 		PFLAG char(1),
 		TCRCD char(3),
 		TEXRT decimal(11,6),
-		TRGGL decimal(15),
-		TUGGL decimal(15),
+		TRGGL decimal(15,0),
+		TUGGL decimal(15,0),
 		TUGLA decimal(13,2),
 		TRGLA decimal(13,2),
 		DUGLA decimal(13,2),
@@ -361,68 +267,21 @@ func createAPHeaderTable(tblName string) {
 		IEDSC decimal(13,2),
 		A1099 int(2),
 		GLCMP int(3),
-		INDSC varchar(30),
-		VCHNO int(6),
-		OPERD int(2),
-		BNACT varchar(10),
-		APAGL decimal(15),
-		ADAMT decimal(13,2),
-		FADAM decimal(13,2),
-		REMAN decimal(13,2),
-		FREMN decimal(13,2),
-		DISCA decimal(13,2),
-		FDSCA decimal(13,2),
-		TDSCT decimal(13,2),
-		FTDST decimal(13,2),
-		TDSCA decimal(13,2),
-		FTDSA decimal(13,2),
-		DISCP decimal(5,3),
-		PURCH int(6),
-		RECVN int(6),
-		APIDT date,
-		APDDT date,
-		APCDT date,
-		NXSEQ int(3),
-		APLDT date,
-		IVENT char(1),
-		PYHLD char(1),
-		PYNXT char(1),
-		AFDSC char(1),
-		ASDSC char(1),
-		ICOMP char(1),
-		COMPL char(1),
-		A1CUR char(3),
-		A1OER decimal(11,6),
-		APMER char(1),
-		A1CER decimal(11,6),
-		APUGA decimal(13,2),
-		APRGA decimal(13,2),
-		INRSN varchar(25),
-		TDSCL decimal(13,2),
-		FTDSL decimal(13,2),
-		ORGIN decimal(13,2),
-		FORIN decimal(13,2),
-		SLPAY char(1),
-		VALPH char(6),
-		A1TXA decimal(13,2),
-		A1TXR decimal(5,3),
-		A1TGA decimal(13,2),
-		A1GPF char(1),
-		A1PVT char(4),
-		A1FTX decimal(13,2),
-		A1FGA decimal(13,2),
-		A1PYC varchar(10),
-		A1SPC char(1),
-		A1DDT date,
-		A1DPF char(1),
-		A1TXP char(1),
-		A1ASC char(1),
-		A1REL int(3),
-		APUGN decimal(15),
-		APULS decimal(15),
-		APRGN decimal(15),
-		APRLS decimal(15),
-		APIGL decimal(15)
+		A2VTR decimal(5,3),
+		A2TGA decimal(13,2),
+		A2GPF char(1),
+		A2PVT char(4),
+		A2FGA decimal(13,2),
+		A2PYC varchar(10),
+		A2SPC char(1),
+		A2DDT date,
+		A2DPF char(1),
+		A2ASC char(1),
+		APUGN decimal(15,0),
+		APULS decimal(15,0),
+		APRGN decimal(15,0),
+		APRLS decimal(15,0),
+		APIGL decimal(15,0)
 		) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 		`
 	_, err := dbMysql.Exec(stmt)
