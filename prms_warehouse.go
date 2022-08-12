@@ -32,6 +32,10 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	err = dbOdbc.Ping()
+	if err != nil {
+		panic(err)
+	}
 	defer dbOdbc.Close()
 
 	// get credentials and connect to Mysql

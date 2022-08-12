@@ -1,17 +1,20 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"os"
 	"reflect"
 	"strings"
+	"syscall"
 	"time"
 
 	_ "github.com/alexbrainman/odbc"
 	"github.com/go-sql-driver/mysql"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
+	"golang.org/x/term"
 )
 
 var dbOdbc *sqlx.DB
@@ -658,16 +661,23 @@ type Customer2 struct {
 
 func main() {
 	var err error
-	var odbcConnectStr string
-	var mysqlConnectStr string
+	var (
+		odbcConnectStr  string
+		mysqlConnectStr string
+		startDate       string
+		endDate         string
+	)
 
-	if len(os.Args) != 5 {
+	if len(os.Args) == 1 {
+		odbcConnectStr, mysqlConnectStr, startDate, endDate = getInputs()
+		dateStart, dateEnd = checkDates(startDate, endDate)
+	} else if len(os.Args) != 5 {
 		panic("Argument count less than 4")
 	} else {
 		odbcConnectStr = os.Args[1]
 		mysqlConnectStr = os.Args[2]
-		startDate := os.Args[3]
-		endDate := os.Args[4]
+		startDate = os.Args[3]
+		endDate = os.Args[4]
 		dateStart, dateEnd = checkDates(startDate, endDate)
 	}
 	dbOdbc, err = sqlx.Open("odbc", odbcConnectStr)
@@ -684,6 +694,65 @@ func main() {
 	defer dbMysql.Close()
 
 	processCustomerTable()
+}
+
+func getInputs() (string, string, string, string) {
+	startDate := ""
+	endDate := ""
+
+	// get credentials to AS400
+	dsn := getInput("AS400 Server DSN : ")
+	userAS, pwd, err := getCredentials()
+	if err != nil {
+		panic(err)
+	}
+
+	odbcConnectStr := fmt.Sprintf("DSN=%s; UID=%s; PWD=%s", dsn, userAS, pwd)
+
+	// get credentials to Mysql
+	mysqlIP := getInput("\nMySQL Server IP : ")
+	user, pwd, err := getCredentials()
+	if err != nil {
+		panic(err)
+	}
+	mysqlConnectStr := fmt.Sprintf("%s:%s@tcp(%s:3306)/prms_ap?charset=utf8&parseTime=True&loc=Local",
+		user, pwd, mysqlIP)
+
+	// read REFXDAT file in MDMOD# library to get the Start Date & End Date
+	sql := `SELECT SDAT, EDAT FROM mdmod#.refxdat`
+	err = dbOdbc.QueryRow(sql).Scan(&startDate, &endDate)
+	if err != nil {
+		panic(err)
+	}
+	return odbcConnectStr, mysqlConnectStr, startDate, endDate
+}
+
+func getInput(msg string) string {
+	scanner := bufio.NewScanner(os.Stdin)
+
+	fmt.Print(msg)
+	scanner.Scan()
+	return strings.TrimSpace(scanner.Text())
+}
+
+func getCredentials() (string, string, error) {
+	reader := bufio.NewReader(os.Stdin)
+
+	fmt.Print("Username : ")
+	user, err := reader.ReadString('\n')
+	if err != nil {
+		return "", "", err
+	}
+
+	fmt.Print("Password : ")
+	bytePwd, err := term.ReadPassword(int(syscall.Stdin))
+	if err != nil {
+		return "", "", err
+	}
+	fmt.Println()
+	pwd := string(bytePwd)
+
+	return strings.TrimSpace(user), strings.TrimSpace(pwd), nil
 }
 
 func checkDates(startDate, endDate string) (time.Time, time.Time) {
