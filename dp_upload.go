@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strconv"
 	"strings"
@@ -336,6 +337,56 @@ type Vendor struct {
 }
 
 type Bank struct {
+	ACTIV string  `db:"ACTIV"`
+	CMPNO float64 `db:"CMPNO"`
+	PLTNO float64 `db:"PLTNO"`
+	B2BNK float64 `db:"B2BNK"`
+	B2PYC string  `db:"B2PYC"`
+	B2DES string  `db:"B2DES"`
+	B2MDA string  `db:"B2MDA"`
+	B2PFM string  `db:"B2PFM"`
+	B2TFM string  `db:"B2TFM"`
+	B2SPC string  `db:"B2SPC"`
+	B2REM string  `db:"B2REM"`
+	B2DOM string  `db:"B2DOM"`
+	B2STS string  `db:"B2STS"`
+	B2MPN float64 `db:"B2MPN"`
+	B2APN float64 `db:"B2APN"`
+	B2SSF string  `db:"B2SSF"`
+	B2VOD float64 `db:"B2VOD"`
+	B2ONE string  `db:"B2ONE"`
+	B2STB string  `db:"B2STB"`
+	B2ISB float64 `db:"B2ISB"`
+	B2IRA float64 `db:"B2IRA"`
+	B2SEQ string  `db:"B2SEQ"`
+	B2DGL string  `db:"B2DGL"`
+	B2P01 float64 `db:"B2P01"`
+	B2P02 float64 `db:"B2P02"`
+	B2P03 float64 `db:"B2P03"`
+	B2P04 float64 `db:"B2P04"`
+	B2P05 float64 `db:"B2P05"`
+	B2P06 float64 `db:"B2P06"`
+	B2P07 float64 `db:"B2P07"`
+	B2P08 float64 `db:"B2P08"`
+	B2P09 float64 `db:"B2P09"`
+	B2P10 float64 `db:"B2P10"`
+	B2P11 float64 `db:"B2P11"`
+	B2P12 float64 `db:"B2P12"`
+	B2P13 float64 `db:"B2P13"`
+	B2D01 float64 `db:"B2D01"`
+	B2D02 float64 `db:"B2D02"`
+	B2D03 float64 `db:"B2D03"`
+	B2D04 float64 `db:"B2D04"`
+	B2D05 float64 `db:"B2D05"`
+	B2D06 float64 `db:"B2D06"`
+	B2D07 float64 `db:"B2D07"`
+	B2D08 float64 `db:"B2D08"`
+	B2D09 float64 `db:"B2D09"`
+	B2D10 float64 `db:"B2D10"`
+	B2D11 float64 `db:"B2D11"`
+	B2D12 float64 `db:"B2D12"`
+	B2D13 float64 `db:"B2D13"`
+	B2MCA float64 `db:"B2MCA"`
 }
 
 type MSCURR struct {
@@ -364,6 +415,9 @@ var (
 	inv           Invoice
 	vnd           Vendor
 	bnk           Bank
+	runType       string
+	errorFile     *os.File
+	errorMsg      string
 	vendorNum     string
 	invoiceNum    string
 	strAmount     string
@@ -412,12 +466,17 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	dbPostgre.Close()
+	defer dbPostgre.Close()
 
 	getSystemControl()
 	inputFile := getInput("\nFile to upload : ")
 	if strings.HasSuffix(strings.ToLower(inputFile), ".xlsx") || strings.HasSuffix(strings.ToLower(inputFile), ".xls") {
+		openErrorFile(inputFile)
 		uploadExcel(inputFile)
+	} else if strings.HasSuffix(strings.ToLower(inputFile), ".txt") ||
+		strings.HasSuffix(strings.ToLower(inputFile), ".csv") {
+		openErrorFile(inputFile)
+		uploadCSV(inputFile)
 	}
 }
 
@@ -468,7 +527,6 @@ func getSystemControl() {
 	temp := ""
 	temp = wcdta[0:15]
 	apglac.APACC, _ = strconv.ParseInt(temp, 10, 64)
-	fmt.Printf("APACC = [%d]\n", apglac.APACC)
 
 	// get APCLOS
 	err = dbOdbc.QueryRow(stmt, "APCLOS", 777, 0).Scan(&wcdta)
@@ -485,10 +543,92 @@ func getSystemControl() {
 	mscurr.MOBAR = wcdta[0:1]
 	mscurr.MPOAP = wcdta[1:2]
 	mscurr.MBCUR = wcdta[2:5]
-	fmt.Printf("MBCURR = [%s]\n", mscurr.MBCUR)
+}
+
+func openErrorFile(inputFile string) {
+	var err error
+
+	// extract the filename w/o file extension
+	errorFileName := strings.TrimSuffix(inputFile, filepath.Ext(inputFile))
+
+	// add .err file extension
+	errorFileName += ".err"
+
+	// create the error file
+	errorFile, err = os.Create(errorFileName)
+	if err != nil {
+		panic(err)
+	}
+
+	// write header to the error file
+	tenSpaces := strings.Repeat(" ", 10)
+	fmt.Fprintf(errorFile, "%sAP Uploading Error Report%s%s\n", strings.Repeat(" ", 60),
+		strings.Repeat(" ", 55), time.Now().Format("01/02/2006"))
+	fmt.Fprintf(errorFile, "%sTrial Run\n\n", strings.Repeat(" ", 67))
+	fmt.Fprintf(errorFile, "%5.5s%s%-20.20s%s%-14.14s%s%-9.9s%s%-12.12s%s%-20.20s\n",
+		"SEQ #", tenSpaces, "INVOICE #", tenSpaces, "INVOICE AMOUNT", tenSpaces, "VOUCHER #",
+		tenSpaces, "INVOICE DATE", tenSpaces, "REMARKS")
+	fmt.Fprintf(errorFile, strings.Repeat("-", 150))
+
+	fmt.Println("Error file : ", errorFileName)
 }
 
 func uploadExcel(filename string) {
+	f, err := excelize.OpenFile(filename)
+	if err != nil {
+		panic(err)
+	}
+
+	rows, err := f.Rows("Sheet1")
+	if err != nil {
+		panic(err)
+	}
+
+	rowCount := 0
+	errorFound := false
+	for rows.Next() {
+		errorMsg = ""
+		rowCount++
+
+		// skip the header row
+		if rowCount == 1 {
+			continue
+		}
+
+		inv = Invoice{}
+		currTimeStamp = time.Now()
+
+		// get the column data to upload
+		row := rows.Columns()
+		vendorNum = strings.TrimSpace(row[0])
+		invoiceNum = strings.TrimSpace(row[1])
+		strAmount = strings.TrimSpace(row[2])
+		customerNum = strings.TrimSpace(row[3])
+		invoiceDate = strings.TrimSpace(row[4])
+
+		// get vendor details from AS400
+		vnd, err = getVendor(vendorNum)
+		if err == sql.ErrNoRows {
+			errorFound = true
+			errorMsg = "Vendor not found."
+		}
+
+		// get bank details from AS400
+		bnk, err = getBank()
+		if err == sql.ErrNoRows {
+			errorFound = true
+			errorMsg = "Bank not found."
+		}
+
+		if errorFound {
+			printErrorMsg()
+		} else if runType == "Final" {
+			saveInvoice()
+		}
+	}
+}
+
+func uploadCSV(filename string) {
 	f, err := excelize.OpenFile(filename)
 	if err != nil {
 		panic(err)
@@ -524,15 +664,16 @@ func uploadExcel(filename string) {
 		vnd, err = getVendor(vendorNum)
 		if err == sql.ErrNoRows {
 			errorFound = true
-			fmt.Printf("Vendor not Found!")
 			continue
 		}
 
 		// get bank details from AS400
-		// bnk, err = getBank()
-		if err != nil {
-			panic(err)
+		bnk, err = getBank()
+		if err == sql.ErrNoRows {
+			errorFound = true
+			continue
 		}
+
 		if !errorFound {
 			saveInvoice()
 		}
@@ -542,10 +683,10 @@ func uploadExcel(filename string) {
 func getVendor(vendorNum string) (Vendor, error) {
 	vendor := Vendor{}
 	fields := DBFields(Vendor{})
-	fieldsCSV := fieldsCSV(fields)
+	fieldsCsv := fieldsCSV(fields)
 	// fieldsCSVColons := fieldsCSVColons(fields)
 
-	selectStmt := fmt.Sprintf("SELECT %s FROM RMSMDFL#.MSVMP100 WHERE vndno=?", fieldsCSV)
+	selectStmt := fmt.Sprintf("SELECT %s FROM RMSMDFL#.MSVMP100 WHERE vndno=?", fieldsCsv)
 	err := dbOdbc.QueryRowx(selectStmt, vendorNum).StructScan(&vendor)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -558,8 +699,23 @@ func getVendor(vendorNum string) (Vendor, error) {
 	return vendor, err
 }
 
-func getBank() {
+func getBank() (Bank, error) {
+	bank := Bank{}
+	fields := DBFields(Bank{})
+	fieldsCsv := fieldsCSV(fields)
 
+	selectStmt := fmt.Sprintf("SELECT %s FROM RMSMDFL#.APBAP200 WHERE B2BNK=? AND B2PYC=?",
+		fieldsCsv)
+	err := dbOdbc.QueryRowx(selectStmt, vnd.BNKN1, vnd.VMPYC).StructScan(&bank)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return bank, err
+		}
+
+		panic(err)
+	}
+
+	return bank, err
 }
 
 func saveInvoice() {
@@ -589,7 +745,7 @@ func saveInvoice() {
 	inv.MFLAG = "N"
 	inv.VOIDF = "N"
 	inv.PFLAG = " "
-	inv.TCRCD = "PHP"
+	inv.TCRCD = mscurr.MBCUR
 	inv.TEXRT = 1
 	inv.TRGGL = 0
 	inv.TUGGL = 0
@@ -619,6 +775,63 @@ func saveInvoice() {
 	inv.PURCH = 0
 	inv.RECVN = 0
 	inv.APIDT, _ = time.Parse("01022006", invoiceDate)
+	inv.APDDT = inv.APIDT.AddDate(0, 0, vnd.VDAYS)
+	inv.APCDT = inv.APDDT
+	inv.NXSEQ = 1
+	inv.APLDT = getMonthEnd(inv.AUDDT)
+	inv.IVENT = "Y"
+	inv.PYHLD = vnd.VPHLD
+	inv.PYNXT = vnd.VPNXT
+	inv.AFDSC = vnd.VFDSC
+	inv.ASDSC = vnd.VSDSC
+	inv.ICOMP = " "
+	inv.COMPL = " "
+	inv.A1CUR = mscurr.MBCUR
+	inv.A1OER = 1
+	inv.APMER = "N"
+	inv.A1CER = 1
+	inv.APUGA = 0
+	inv.APRGA = 0
+	inv.INRSN = " "
+	inv.TDSCL = 0
+	inv.FTDSL = 0
+	inv.ORGIN = amount
+	inv.FORIN = amount
+	inv.SLPAY = " "
+	inv.VALPH = vnd.ALPHA
+	inv.A1TXA = 0
+	inv.A1TXR = 0
+	inv.A1TGA = 0
+	inv.A1GPF = " "
+	inv.A1PVT = "    "
+	inv.A1FTX = 0
+	inv.A1FGA = 0
+	inv.A1PYC = vnd.VMPYC
+	inv.A1SPC = bnk.B2SPC
+	// inv.A1DDT =
+	inv.A1DPF = "Y"
+	inv.A1TXP = vnd.VMTXP
+	inv.A1ASC = " "
+	inv.A1REL = 0
+	inv.APUGN = 0
+	inv.APULS = 0
+	inv.APRGN = 0
+	inv.APRLS = 0
+	inv.APIGL = 0
+
+	// save record into APAPP100 table in  Postgres DB
+	fields := DBFields(Invoice{})
+	fieldsCsv := fieldsCSV(fields)
+	fieldsCsvColons := fieldsCSVColons(fields)
+	insertStmt := fmt.Sprintf("INSERT INTO apapp100 (%s) VALUES(%s)", fieldsCsv, fieldsCsvColons)
+	_, err := dbPostgre.NamedExec(insertStmt, inv)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func getMonthEnd(currDate time.Time) time.Time {
+	return time.Date(currDate.Year(), currDate.Month()+1, 0, 0, 0, 0, 0, time.UTC)
 }
 
 func DBFields(values interface{}) []string {
@@ -661,4 +874,8 @@ func fieldsCSVColons(fields []string) string {
 		}
 	}
 	return result
+}
+
+func printErrorMsg() {
+
 }
