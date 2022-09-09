@@ -3,7 +3,9 @@ package main
 import (
 	"bufio"
 	"database/sql"
+	"encoding/csv"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -12,8 +14,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/360EntSecGroup-Skylar/excelize"
 	_ "github.com/alexbrainman/odbc"
+	"github.com/dustin/go-humanize"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 	"golang.org/x/term"
@@ -418,6 +420,8 @@ var (
 	runType       string
 	errorFile     *os.File
 	errorMsg      string
+	errorFound    bool
+	lineNum       int
 	vendorNum     string
 	invoiceNum    string
 	strAmount     string
@@ -429,6 +433,8 @@ var (
 )
 
 func main() {
+	runType = "Final"
+
 	dsn := getInput("AS400 Server DSN : ")
 	userAS, pwd, err := getCredentials()
 	if err != nil {
@@ -470,14 +476,8 @@ func main() {
 
 	getSystemControl()
 	inputFile := getInput("\nFile to upload : ")
-	if strings.HasSuffix(strings.ToLower(inputFile), ".xlsx") || strings.HasSuffix(strings.ToLower(inputFile), ".xls") {
-		openErrorFile(inputFile)
-		uploadExcel(inputFile)
-	} else if strings.HasSuffix(strings.ToLower(inputFile), ".txt") ||
-		strings.HasSuffix(strings.ToLower(inputFile), ".csv") {
-		openErrorFile(inputFile)
-		uploadCSV(inputFile)
-	}
+	openErrorFile(inputFile)
+	uploadCSV(inputFile)
 }
 
 func getInput(msg string) string {
@@ -561,120 +561,78 @@ func openErrorFile(inputFile string) {
 	}
 
 	// write header to the error file
-	tenSpaces := strings.Repeat(" ", 10)
+	space := " "
 	fmt.Fprintf(errorFile, "%sAP Uploading Error Report%s%s\n", strings.Repeat(" ", 60),
 		strings.Repeat(" ", 55), time.Now().Format("01/02/2006"))
-	fmt.Fprintf(errorFile, "%sTrial Run\n\n", strings.Repeat(" ", 67))
-	fmt.Fprintf(errorFile, "%5.5s%s%-20.20s%s%-14.14s%s%-9.9s%s%-12.12s%s%-20.20s\n",
-		"SEQ #", tenSpaces, "INVOICE #", tenSpaces, "INVOICE AMOUNT", tenSpaces, "VOUCHER #",
-		tenSpaces, "INVOICE DATE", tenSpaces, "REMARKS")
-	fmt.Fprintf(errorFile, strings.Repeat("-", 150))
+	fmt.Fprintf(errorFile, "%s%s Run\n\n", strings.Repeat(" ", 67), runType)
+	fmt.Fprintf(errorFile, "%6.6s%4.4s%s%6.6s%s%-20.20s%s%-14.14s%s%-9.9s%s%-12.12s%s\n",
+		"LINE #", space, "VENDOR #", space, "INVOICE #", space, "INVOICE AMOUNT", space, "VOUCHER #",
+		space, "INVOICE DATE", space, "REMARKS")
+	fmt.Fprintf(errorFile, "%s\n", strings.Repeat("-", 150))
 
 	fmt.Println("Error file : ", errorFileName)
 }
 
-func uploadExcel(filename string) {
-	f, err := excelize.OpenFile(filename)
+func uploadCSV(filename string) {
+	f, err := os.Open(filename)
 	if err != nil {
 		panic(err)
 	}
 
-	rows, err := f.Rows("Sheet1")
+	r := csv.NewReader(f)
 	if err != nil {
 		panic(err)
 	}
 
-	rowCount := 0
-	errorFound := false
-	for rows.Next() {
-		errorMsg = ""
-		rowCount++
-
-		// skip the header row
-		if rowCount == 1 {
-			continue
+	lineNum = 0
+	for {
+		errorFound = false
+		record, err := r.Read()
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			panic(err)
 		}
+		lineNum++
 
 		inv = Invoice{}
 		currTimeStamp = time.Now()
 
 		// get the column data to upload
-		row := rows.Columns()
-		vendorNum = strings.TrimSpace(row[0])
-		invoiceNum = strings.TrimSpace(row[1])
-		strAmount = strings.TrimSpace(row[2])
-		customerNum = strings.TrimSpace(row[3])
-		invoiceDate = strings.TrimSpace(row[4])
+		vendorNum = strings.TrimSpace(record[0])
+		invoiceNum = strings.TrimSpace(record[1])
+		strAmount = strings.TrimSpace(record[2])
+		customerNum = strings.TrimSpace(record[3])
+		invoiceDate = strings.TrimSpace(record[4])
+
+		// validate Invoice Date
+		if vInvoiceDate() {
+			errorFound = true
+			printError()
+		}
+
+		if vDuplicate() {
+			errorFound = true
+			printError()
+		}
 
 		// get vendor details from AS400
 		vnd, err = getVendor(vendorNum)
 		if err == sql.ErrNoRows {
 			errorFound = true
 			errorMsg = "Vendor not found."
+			printError()
 		}
 
 		// get bank details from AS400
 		bnk, err = getBank()
 		if err == sql.ErrNoRows {
 			errorFound = true
-			errorMsg = "Bank not found."
+			errorMsg = "Bank not found"
+			printError()
 		}
 
-		if errorFound {
-			printErrorMsg()
-		} else if runType == "Final" {
-			saveInvoice()
-		}
-	}
-}
-
-func uploadCSV(filename string) {
-	f, err := excelize.OpenFile(filename)
-	if err != nil {
-		panic(err)
-	}
-
-	rows, err := f.Rows("Sheet1")
-	if err != nil {
-		panic(err)
-	}
-
-	rowCount := 0
-	errorFound := false
-	for rows.Next() {
-		rowCount++
-
-		// skip the header row
-		if rowCount == 1 {
-			continue
-		}
-
-		inv = Invoice{}
-		currTimeStamp = time.Now()
-
-		// get the column data to upload
-		row := rows.Columns()
-		vendorNum = strings.TrimSpace(row[0])
-		invoiceNum = strings.TrimSpace(row[1])
-		strAmount = strings.TrimSpace(row[2])
-		customerNum = strings.TrimSpace(row[3])
-		invoiceDate = strings.TrimSpace(row[4])
-
-		// get vendor details from AS400
-		vnd, err = getVendor(vendorNum)
-		if err == sql.ErrNoRows {
-			errorFound = true
-			continue
-		}
-
-		// get bank details from AS400
-		bnk, err = getBank()
-		if err == sql.ErrNoRows {
-			errorFound = true
-			continue
-		}
-
-		if !errorFound {
+		if runType == "Final" && !errorFound {
 			saveInvoice()
 		}
 	}
@@ -876,6 +834,61 @@ func fieldsCSVColons(fields []string) string {
 	return result
 }
 
-func printErrorMsg() {
+func printError() {
+	fmt.Fprintf(errorFile, "%05d", lineNum)
+	fmt.Fprintf(errorFile, "%5.5s", " ")
+	fmt.Fprintf(errorFile, "%6.6s", vendorNum)
+	fmt.Fprintf(errorFile, "%8.8s", " ")
+	fmt.Fprintf(errorFile, "%-20.20s", invoiceNum)
+	fmt.Fprintf(errorFile, "%9.9s", " ")
 
+	amount, _ := strconv.ParseFloat(strAmount, 64)
+	fmt.Fprintf(errorFile, "%14.14s", humanize.FormatFloat("#,###.##", amount))
+	fmt.Fprintf(errorFile, "%14.14s", " ")
+	fmt.Fprintf(errorFile, "%6.6s", customerNum)
+	fmt.Fprintf(errorFile, "%12.12s", " ")
+	fmt.Fprintf(errorFile, "%8.8s", invoiceDate)
+	fmt.Fprintf(errorFile, "%16.16s", " ")
+	fmt.Fprintf(errorFile, "%s\n", errorMsg)
+}
+
+// vDuplicate - check if there is a duplicate in the database and in the input file
+func vDuplicate() bool {
+	dtInvoice, _ := time.Parse("01022006", invoiceDate)
+	stmt := `SELECT 1 FROM apapp100 WHERE vndno=$1 AND invcn=$2 AND vchno=$3 AND apidt=$4`
+	err := dbPostgre.QueryRow(stmt, vendorNum, invoiceNum, customerNum, dtInvoice).Scan()
+	if err != nil && err != sql.ErrNoRows {
+		errorMsg = err.Error()
+		return true
+	}
+
+	return false
+}
+
+func vInvoiceDate() bool {
+	// prepend "0" if length of date is 5
+	if len(invoiceDate) == 5 {
+		invoiceDate = "0" + invoiceDate
+	}
+
+	// date length is not 6
+	if len(invoiceDate) != 6 {
+		errorMsg = "Invalid Invoice Date"
+		return true
+	}
+
+	// the current invoice date format is MMDDYY
+	// prepend "20" to the year, to make it 4 char length
+	newDateFormat := invoiceDate[:4] + "20" + invoiceDate[4:]
+
+	// validate if newDateFormat is a valid date
+	_, err := time.Parse("01022006", newDateFormat)
+	if err != nil {
+		errorMsg = "Invalid Invoice Date"
+		return true
+	}
+
+	// save the 8 character Invoice Date
+	invoiceDate = newDateFormat
+	return false
 }
