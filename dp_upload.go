@@ -14,6 +14,8 @@ import (
 	"syscall"
 	"time"
 
+	"gopkg.in/ini.v1"
+
 	_ "github.com/alexbrainman/odbc"
 	"github.com/dustin/go-humanize"
 	"github.com/jmoiron/sqlx"
@@ -410,6 +412,11 @@ type APGLAC struct {
 	APACC int64
 }
 
+type INPUTREC struct {
+	vendorNum  string
+	invoiceNum string
+}
+
 var (
 	dbPostgre     *sqlx.DB
 	dbOdbc        *sqlx.DB
@@ -421,7 +428,10 @@ var (
 	errorFile     *os.File
 	errorMsg      string
 	errorFound    bool
-	lineNum       int
+	lineCount     int
+	errorCount    int
+	saveCount     int
+	inputRec      []INPUTREC
 	vendorNum     string
 	invoiceNum    string
 	strAmount     string
@@ -433,10 +443,18 @@ var (
 )
 
 func main() {
-	runType = "Final"
+	cfg, err := ini.Load("dp_upload.ini")
+	if err != nil {
+		panic(err)
+	}
 
-	dsn := getInput("AS400 Server DSN : ")
-	userAS, pwd, err := getCredentials()
+	// get AS400 DSN from ini file
+	dsn := cfg.Section("AS/400").Key("dsn").String()
+	fmt.Printf("\nAS400 Server DSN : %s\n", dsn)
+
+	// get AS400 username from ini file
+	userAS := cfg.Section("AS/400").Key("user").String()
+	pwd, err := getCredentials(userAS)
 	if err != nil {
 		panic(err)
 	}
@@ -454,16 +472,23 @@ func main() {
 	}
 	defer dbOdbc.Close()
 
-	// get credentials and connect to Postgre
-	postgreIP := getInput("\nPostgre Server IP : ")
-	userID, pwd, err = getCredentials()
+	// get PostgreSQL IP address from ini file
+	postgreIP := cfg.Section("PostgreSQL").Key("server_ip").String()
+	fmt.Printf("\nPostgreSQL IP : %s\n", postgreIP)
+
+	// get Postgre database name from ini file
+	dbname := cfg.Section("PostgreSQL").Key("db_name").String()
+
+	// get Postgre user from ini file
+	userID = cfg.Section("PostgreSQL").Key("user").String()
+	pwd, err = getCredentials(userID)
 	if err != nil {
 		panic(err)
 	}
 
 	pqConnectStr := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
 		// "localhost", 5432, "postgres", "justdoit", "prms")
-		postgreIP, 5432, userID, pwd, "prms")
+		postgreIP, 5432, userID, pwd, dbname)
 	dbPostgre, err = sqlx.Open("postgres", pqConnectStr)
 	if err != nil {
 		panic(err)
@@ -474,10 +499,20 @@ func main() {
 	}
 	defer dbPostgre.Close()
 
+	// prompt for Trial/Final Run
+	runType = getInputRun()
+
+	// initialize the input record struct array, to check for duplicate entries
+	inputRec = []INPUTREC{}
+
 	getSystemControl()
 	inputFile := getInput("\nFile to upload : ")
 	openErrorFile(inputFile)
 	uploadCSV(inputFile)
+
+	fmt.Printf("\nInput record count : %d\n", lineCount)
+	fmt.Printf("Error count : %d\n", errorCount)
+	fmt.Printf("Uploaded count : %d\n", saveCount)
 }
 
 func getInput(msg string) string {
@@ -488,24 +523,34 @@ func getInput(msg string) string {
 	return strings.TrimSpace(scanner.Text())
 }
 
-func getCredentials() (string, string, error) {
-	reader := bufio.NewReader(os.Stdin)
+func getInputRun() string {
+	scanner := bufio.NewScanner(os.Stdin)
 
-	fmt.Print("Username : ")
-	user, err := reader.ReadString('\n')
-	if err != nil {
-		return "", "", err
+	fmt.Println()
+	for {
+		fmt.Print("Trial/Final run [T/F] : ")
+		scanner.Scan()
+		inputStr := strings.TrimSpace(scanner.Text())
+		if inputStr[0] == 'T' || inputStr[0] == 't' {
+			return "Trial"
+		} else if inputStr[0] == 'F' || inputStr[0] == 'f' {
+			return "Final"
+		}
 	}
+}
+
+func getCredentials(user string) (string, error) {
+	fmt.Printf("Username : %s\n", user)
 
 	fmt.Print("Password : ")
 	bytePwd, err := term.ReadPassword(int(syscall.Stdin))
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 	fmt.Println()
 	pwd := string(bytePwd)
 
-	return strings.TrimSpace(user), strings.TrimSpace(pwd), nil
+	return strings.TrimSpace(pwd), nil
 }
 
 func getSystemControl() {
@@ -584,7 +629,7 @@ func uploadCSV(filename string) {
 		panic(err)
 	}
 
-	lineNum = 0
+	lineCount = 0
 	for {
 		errorFound = false
 		record, err := r.Read()
@@ -593,7 +638,7 @@ func uploadCSV(filename string) {
 		} else if err != nil {
 			panic(err)
 		}
-		lineNum++
+		lineCount++
 
 		inv = Invoice{}
 		currTimeStamp = time.Now()
@@ -605,22 +650,29 @@ func uploadCSV(filename string) {
 		customerNum = strings.TrimSpace(record[3])
 		invoiceDate = strings.TrimSpace(record[4])
 
+		vDuplicateInInputFile()
+		vDuplicateInDB()
+
+		if vVendor() {
+			errorFound = true
+			printError()
+		} else {
+			// get vendor details from AS400
+			vnd, err = getVendor(vendorNum)
+			if err == sql.ErrNoRows {
+				errorFound = true
+				errorMsg = "Vendor not found."
+				printError()
+			}
+		}
+
+		vInvoiceNumber()
+		vAmount()
+		vCustomerNumber()
+
 		// validate Invoice Date
 		if vInvoiceDate() {
 			errorFound = true
-			printError()
-		}
-
-		if vDuplicate() {
-			errorFound = true
-			printError()
-		}
-
-		// get vendor details from AS400
-		vnd, err = getVendor(vendorNum)
-		if err == sql.ErrNoRows {
-			errorFound = true
-			errorMsg = "Vendor not found."
 			printError()
 		}
 
@@ -786,6 +838,8 @@ func saveInvoice() {
 	if err != nil {
 		panic(err)
 	}
+
+	saveCount++
 }
 
 func getMonthEnd(currDate time.Time) time.Time {
@@ -835,7 +889,8 @@ func fieldsCSVColons(fields []string) string {
 }
 
 func printError() {
-	fmt.Fprintf(errorFile, "%05d", lineNum)
+	errorCount++
+	fmt.Fprintf(errorFile, "%05d", lineCount)
 	fmt.Fprintf(errorFile, "%5.5s", " ")
 	fmt.Fprintf(errorFile, "%6.6s", vendorNum)
 	fmt.Fprintf(errorFile, "%8.8s", " ")
@@ -852,20 +907,138 @@ func printError() {
 	fmt.Fprintf(errorFile, "%s\n", errorMsg)
 }
 
-// vDuplicate - check if there is a duplicate in the database and in the input file
-func vDuplicate() bool {
-	dtInvoice, _ := time.Parse("01022006", invoiceDate)
-	stmt := `SELECT 1 FROM apapp100 WHERE vndno=$1 AND invcn=$2 AND vchno=$3 AND apidt=$4`
-	err := dbPostgre.QueryRow(stmt, vendorNum, invoiceNum, customerNum, dtInvoice).Scan()
-	if err != nil && err != sql.ErrNoRows {
-		errorMsg = err.Error()
+// vDuplicateInDB - check if there is a duplicate in the database and in the input file
+func vDuplicateInDB() {
+	// dtInvoice, _ := time.Parse("01022006", invoiceDate)
+	// stmt := `SELECT 1 FROM apapp100 WHERE vndno=$1 AND invcn=$2 AND vchno=$3 AND apidt=$4`
+	stmt := `SELECT 1 FROM apapp100 WHERE vndno=$1 AND invcn=$2`
+
+	tmp := 0
+	// err := dbPostgre.QueryRow(stmt, vendorNum, invoiceNum, customerNum, dtInvoice).Scan(&tmp)
+	err := dbPostgre.QueryRow(stmt, vendorNum, invoiceNum).Scan(&tmp)
+	if err != nil {
+		if err != sql.ErrNoRows {
+			errorFound = true
+			errorMsg = err.Error()
+			printError()
+			return
+		}
+	} else {
+		errorFound = true
+		errorMsg = "Duplicate Invoice # in database"
+		printError()
+		return
+	}
+
+	return
+}
+
+// vDuplicateInInputFile - check if there is a duplicate in the input file
+func vDuplicateInInputFile() {
+
+	for _, inp := range inputRec {
+		if inp.vendorNum == vendorNum && inp.invoiceNum == invoiceNum {
+			errorFound = true
+			errorMsg = "Duplicate Invoice # in upload file."
+			printError()
+			return
+		}
+	}
+
+	// save vendor & invoice in the array
+	inputRec = append(inputRec, INPUTREC{
+		vendorNum:  vendorNum,
+		invoiceNum: invoiceNum,
+	})
+
+	return
+}
+
+func vVendor() bool {
+	if strings.TrimSpace(vendorNum) == "" {
+		errorMsg = "Missing Vendor #"
+		return true
+	}
+
+	inv, _ := strconv.Atoi(vendorNum)
+	if inv == 0 {
+		errorMsg = "Vendor # is 0"
 		return true
 	}
 
 	return false
 }
 
+func vInvoiceNumber() {
+	if invoiceNum == "" {
+		errorFound = true
+		errorMsg = "Missing Invoice #"
+		printError()
+		return
+	}
+
+	if allchars(invoiceNum, '0') {
+		errorFound = true
+		errorMsg = "Invoice # is 0"
+		printError()
+		return
+	}
+}
+
+func vAmount() {
+	if strAmount == "" {
+		errorFound = true
+		errorMsg = "Missing Invoice Amount."
+		printError()
+		return
+	}
+
+	amount, err := strconv.ParseFloat(strAmount, 64)
+	if err != nil {
+		errorFound = true
+		errorMsg = "Invalid Invoice Amount."
+		printError()
+		return
+	}
+
+	if amount == 0 {
+		errorFound = true
+		errorMsg = "Invoice Amount is 0."
+		printError()
+		return
+	}
+
+	if amount < 0 {
+		errorFound = true
+		errorMsg = "Negative Invoice Amount."
+		printError()
+		return
+	}
+}
+
+func vCustomerNumber() {
+	if customerNum == "" {
+		errorFound = true
+		errorMsg = "Missing Customer Number"
+		printError()
+		return
+	}
+
+	if allchars(customerNum, '0') {
+		errorFound = true
+		errorMsg = "Customer Number is 0"
+		printError()
+		return
+	}
+}
+
 func vInvoiceDate() bool {
+
+	if strings.TrimSpace(invoiceDate) == "" {
+		errorMsg = "Missing Date"
+		return true
+	}
+
 	// prepend "0" if length of date is 5
 	if len(invoiceDate) == 5 {
 		invoiceDate = "0" + invoiceDate
@@ -891,4 +1064,14 @@ func vInvoiceDate() bool {
 	// save the 8 character Invoice Date
 	invoiceDate = newDateFormat
 	return false
+}
+
+func allchars(field string, char byte) bool {
+	for i := 0; i < len(field); i++ {
+		if field[i] != char {
+			return false
+		}
+	}
+
+	return true
 }
