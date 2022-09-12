@@ -443,55 +443,118 @@ var (
 )
 
 func main() {
-	cfg, err := ini.Load("dp_upload.ini")
-	if err != nil {
-		panic(err)
+	var err error
+
+	// check if ini file exists
+	cfg := &ini.File{}
+	if _, err := os.Stat("dp_upload.ini"); err == nil {
+		cfg, err = ini.Load("dp_upload.ini")
+		if err != nil {
+			panic(err)
+		}
+	} else {
+		cfg = nil
 	}
 
 	// get AS400 DSN from ini file
-	dsn := cfg.Section("AS/400").Key("dsn").String()
-	fmt.Printf("\nAS400 Server DSN : %s\n", dsn)
+	dsn := ""
+	if cfg != nil {
+		dsn = cfg.Section("AS/400").Key("dsn").String()
+		dsn = strings.TrimSpace(dsn)
+	}
+	if dsn != "" {
+		fmt.Printf("\nAS400 Server DSN : %s\n", dsn)
+	} else {
+		// if dsn is blank or missing in ini file
+		dsn = getInput("AS400 Server DSN : ")
+	}
 
 	// get AS400 username from ini file
-	userAS := cfg.Section("AS/400").Key("user").String()
-	pwd, err := getCredentials(userAS)
-	if err != nil {
-		panic(err)
+	userAS := ""
+	if cfg != nil {
+		userAS = cfg.Section("AS/400").Key("user").String()
+		userAS = strings.TrimSpace(userAS)
+	}
+	if userAS != "" {
+		fmt.Printf("Username : %s\n", userAS)
+	} else {
+		// user is blank or missing in ini file
+		userAS = getInput("Username : ")
 	}
 
-	// connect to AS400
-	odbcConnectStr := fmt.Sprintf("DSN=%s; UID=%s; PWD=%s", dsn, userAS, pwd)
-	dbOdbc, err = sqlx.Open("odbc", odbcConnectStr)
-	// dbOdbc, err := sql.Open("odbc", fmt.Sprintf("DSN=%s; UID=%s; PWD=%s", "MDC", "APC", "APPS7OWNER"))
-	if err != nil {
-		panic(err)
-	}
-	err = dbOdbc.Ping()
-	if err != nil {
-		panic(err)
+	pwd := ""
+	// get credential & connect to AS400
+	for {
+		pwd, err = getCredentials(userAS)
+		if err != nil {
+			panic(err)
+		}
+
+		// connect to AS400
+		odbcConnectStr := fmt.Sprintf("DSN=%s; UID=%s; PWD=%s", dsn, userAS, pwd)
+		dbOdbc, err = sqlx.Open("odbc", odbcConnectStr)
+		// dbOdbc, err := sql.Open("odbc", fmt.Sprintf("DSN=%s; UID=%s; PWD=%s", "MDC", "APC", "APPS7OWNER"))
+		err = dbOdbc.Ping()
+		if err != nil {
+			fmt.Println(err)
+		} else {
+			break
+		}
 	}
 	defer dbOdbc.Close()
 
 	// get PostgreSQL IP address from ini file
-	postgreIP := cfg.Section("PostgreSQL").Key("server_ip").String()
-	fmt.Printf("\nPostgreSQL IP : %s\n", postgreIP)
-
-	// get Postgre database name from ini file
-	dbname := cfg.Section("PostgreSQL").Key("db_name").String()
-
-	// get Postgre user from ini file
-	userID = cfg.Section("PostgreSQL").Key("user").String()
-	pwd, err = getCredentials(userID)
-	if err != nil {
-		panic(err)
+	postgreIP := ""
+	if cfg != nil {
+		postgreIP = cfg.Section("PostgreSQL").Key("server_ip").String()
+		postgreIP = strings.TrimSpace(postgreIP)
+	}
+	if postgreIP != "" {
+		fmt.Printf("\nPostgreSQL IP : %s\n", postgreIP)
+	} else {
+		// server_ip is blank or missing in ini file
+		postgreIP = getInput("\nPostgreSQL IP : ")
 	}
 
-	pqConnectStr := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
-		// "localhost", 5432, "postgres", "justdoit", "prms")
-		postgreIP, 5432, userID, pwd, dbname)
-	dbPostgre, err = sqlx.Open("postgres", pqConnectStr)
-	if err != nil {
-		panic(err)
+	// get Postgre database name from ini file
+	dbname := ""
+	if cfg != nil {
+		dbname = cfg.Section("PostgreSQL").Key("db_name").String()
+		dbname = strings.TrimSpace(dbname)
+	}
+	if dbname == "" {
+		// db_name is blank or missing in ini file
+		dbname = getInput("Database Name : ")
+	}
+
+	// get Postgre user from ini file
+	if cfg != nil {
+		userID = cfg.Section("PostgreSQL").Key("user").String()
+		userID = strings.TrimSpace(userID)
+	}
+	if userID != "" {
+		fmt.Println("Username :", userID)
+	} else {
+		// user is blank or missing in ini file
+		userID = getInput("Username : ")
+	}
+
+	// loop until connected to the Postgre DB successfully
+	for {
+		pwd, err = getCredentials(userID)
+		if err != nil {
+			panic(err)
+		}
+
+		pqConnectStr := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
+			// "localhost", 5432, "postgres", "justdoit", "prms")
+			postgreIP, 5432, userID, pwd, dbname)
+		dbPostgre, err = sqlx.Open("postgres", pqConnectStr)
+		if err != nil {
+			fmt.Println(err)
+		} else {
+			break
+		}
 	}
 	err = dbPostgre.Ping()
 	if err != nil {
@@ -540,8 +603,6 @@ func getInputRun() string {
 }
 
 func getCredentials(user string) (string, error) {
-	fmt.Printf("Username : %s\n", user)
-
 	fmt.Print("Password : ")
 	bytePwd, err := term.ReadPassword(int(syscall.Stdin))
 	if err != nil {
@@ -1019,14 +1080,14 @@ func vAmount() {
 func vCustomerNumber() {
 	if customerNum == "" {
 		errorFound = true
-		errorMsg = "Missing Customer Number"
+		errorMsg = "Missing Voucher Number"
 		printError()
 		return
 	}
 
 	if allchars(customerNum, '0') {
 		errorFound = true
-		errorMsg = "Customer Number is 0"
+		errorMsg = "Voucher Number is 0"
 		printError()
 		return
 	}
