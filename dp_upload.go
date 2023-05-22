@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -417,6 +418,14 @@ type INPUTREC struct {
 	invoiceNum string
 }
 
+type POSTGRE struct {
+	db     *sqlx.DB
+	ip     string
+	dbname string
+	user   string
+	pwd    string
+}
+
 var (
 	dbPostgre     *sqlx.DB
 	dbOdbc        *sqlx.DB
@@ -440,15 +449,38 @@ var (
 	currTimeStamp time.Time
 	mscurr        MSCURR
 	apglac        APGLAC
+	pqConnections []POSTGRE
 )
 
 func main() {
+	// read ini file
+	pqConnections = []POSTGRE{}
+	readIni()
+	defer closeConnections()
+
+	// prompt for Trial/Final Run
+	runType = getInputRun()
+
+	// initialize the input record struct array, to check for duplicate entries
+	inputRec = []INPUTREC{}
+
+	getSystemControl()
+	inputFile := getInput("\nFile to upload : ")
+	openErrorFile(inputFile)
+	uploadCSV(inputFile)
+
+	fmt.Printf("\nInput record count : %d\n", lineCount)
+	fmt.Printf("Error count : %d\n", errorCount)
+	fmt.Printf("Uploaded count : %d\n", saveCount)
+}
+
+func readIni() {
 	var err error
 
 	// check if ini file exists
 	cfg := &ini.File{}
-	if _, err := os.Stat("dp_upload.ini"); err == nil {
-		cfg, err = ini.Load("dp_upload.ini")
+	if _, err := os.Stat("dp_upload2.ini"); err == nil {
+		cfg, err = ini.Load("dp_upload2.ini")
 		if err != nil {
 			panic(err)
 		}
@@ -484,98 +516,72 @@ func main() {
 
 	pwd := ""
 	// get credential & connect to AS400
-	for {
+	if cfg != nil {
+		pwd = cfg.Section("AS/400").Key("pwd").String()
+		pwd = strings.TrimSpace(pwd)
+	} else {
 		pwd, err = getCredentials(userAS)
 		if err != nil {
 			panic(err)
 		}
-
-		// connect to AS400
-		odbcConnectStr := fmt.Sprintf("DSN=%s; UID=%s; PWD=%s", dsn, userAS, pwd)
-		dbOdbc, err = sqlx.Open("odbc", odbcConnectStr)
-		// dbOdbc, err := sql.Open("odbc", fmt.Sprintf("DSN=%s; UID=%s; PWD=%s", "MDC", "APC", "APPS7OWNER"))
-		err = dbOdbc.Ping()
-		if err != nil {
-			fmt.Println(err)
-		} else {
-			break
-		}
-	}
-	defer dbOdbc.Close()
-
-	// get PostgreSQL IP address from ini file
-	postgreIP := ""
-	if cfg != nil {
-		postgreIP = cfg.Section("PostgreSQL").Key("server_ip").String()
-		postgreIP = strings.TrimSpace(postgreIP)
-	}
-	if postgreIP != "" {
-		fmt.Printf("\nPostgreSQL IP : %s\n", postgreIP)
-	} else {
-		// server_ip is blank or missing in ini file
-		postgreIP = getInput("\nPostgreSQL IP : ")
 	}
 
-	// get Postgre database name from ini file
-	dbname := ""
-	if cfg != nil {
-		dbname = cfg.Section("PostgreSQL").Key("db_name").String()
-		dbname = strings.TrimSpace(dbname)
-	}
-	if dbname == "" {
-		// db_name is blank or missing in ini file
-		dbname = getInput("Database Name : ")
-	}
-
-	// get Postgre user from ini file
-	if cfg != nil {
-		userID = cfg.Section("PostgreSQL").Key("user").String()
-		userID = strings.TrimSpace(userID)
-	}
-	if userID != "" {
-		fmt.Println("Username :", userID)
-	} else {
-		// user is blank or missing in ini file
-		userID = getInput("Username : ")
-	}
-
-	// loop until connected to the Postgre DB successfully
-	for {
-		pwd, err = getCredentials(userID)
-		if err != nil {
-			panic(err)
-		}
-
-		pqConnectStr := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
-			// "localhost", 5432, "postgres", "justdoit", "prms")
-			postgreIP, 5432, userID, pwd, dbname)
-		dbPostgre, err = sqlx.Open("postgres", pqConnectStr)
-		if err != nil {
-			fmt.Println(err)
-		} else {
-			break
-		}
-	}
-	err = dbPostgre.Ping()
+	// connect to AS400
+	odbcConnectStr := fmt.Sprintf("DSN=%s; UID=%s; PWD=%s", dsn, userAS, pwd)
+	dbOdbc, err = sqlx.Open("odbc", odbcConnectStr)
+	// dbOdbc, err := sql.Open("odbc", fmt.Sprintf("DSN=%s; UID=%s; PWD=%s", "MDC", "APC", "APPS7OWNER"))
+	err = dbOdbc.Ping()
 	if err != nil {
-		panic(err)
+		fmt.Println(err)
 	}
-	defer dbPostgre.Close()
 
-	// prompt for Trial/Final Run
-	runType = getInputRun()
+	getPostgreConnections(cfg)
+}
 
-	// initialize the input record struct array, to check for duplicate entries
-	inputRec = []INPUTREC{}
+func closeConnections() {
+	// close ODBC connection
+	dbOdbc.Close()
 
-	getSystemControl()
-	inputFile := getInput("\nFile to upload : ")
-	openErrorFile(inputFile)
-	uploadCSV(inputFile)
+	// close Postgre connections
+	for _, pq := range pqConnections {
+		pq.db.Close()
+	}
+}
 
-	fmt.Printf("\nInput record count : %d\n", lineCount)
-	fmt.Printf("Error count : %d\n", errorCount)
-	fmt.Printf("Uploaded count : %d\n", saveCount)
+func getPostgreConnections(cfg *ini.File) {
+
+	// read all PostgreSQL sections
+	for i := 1; i < 20; i++ {
+		sectionName := fmt.Sprintf("PostgreSQL%d", i)
+		if cfg.HasSection(sectionName) {
+			section := cfg.Section(sectionName)
+			ip := strings.TrimSpace(section.Key("server_ip").String())
+			dbname := strings.TrimSpace(section.Key("db_name").String())
+			user := strings.TrimSpace(section.Key("user").String())
+			pwd := strings.TrimSpace(section.Key("pwd").String())
+
+			connString := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
+				ip, 5432, user, pwd, dbname)
+
+			db, err := sqlx.Connect("postgres", connString)
+			if err != nil {
+				fmt.Println(err)
+				panic(err)
+			}
+
+			pqConnections = append(pqConnections, POSTGRE{
+				db:     db,
+				ip:     ip,
+				dbname: dbname,
+				user:   user,
+				pwd:    pwd,
+			})
+		}
+	}
+
+	// set dbPostgre to the postgre database that will be updated
+	l := len(pqConnections) - 1
+	dbPostgre = pqConnections[l].db
 }
 
 func getInput(msg string) string {
@@ -974,23 +980,30 @@ func vDuplicateInDB() {
 	// stmt := `SELECT 1 FROM apapp100 WHERE vndno=$1 AND invcn=$2 AND vchno=$3 AND apidt=$4`
 	stmt := `SELECT 1 FROM apapp100 WHERE vndno=$1 AND invcn=$2`
 
-	tmp := 0
-	// err := dbPostgre.QueryRow(stmt, vendorNum, invoiceNum, customerNum, dtInvoice).Scan(&tmp)
-	err := dbPostgre.QueryRow(stmt, vendorNum, invoiceNum).Scan(&tmp)
-	if err != nil {
-		if err != sql.ErrNoRows {
-			errorFound = true
-			errorMsg = err.Error()
-			printError()
-			return
-		}
-	} else {
-		errorFound = true
-		errorMsg = "Duplicate Invoice # in database"
-		printError()
-		return
+	wg := sync.WaitGroup{}
+	for _, pq := range pqConnections {
+		wg.Add(1)
+		go func(pq POSTGRE, vendorNum string, invoiceNum string) {
+			tmp := 0
+			err := pq.db.QueryRow(stmt, vendorNum, invoiceNum).Scan(&tmp)
+			wg.Done()
+			if err != nil {
+				if err != sql.ErrNoRows {
+					errorFound = true
+					errorMsg = err.Error()
+					printError()
+					return
+				}
+			} else {
+				errorFound = true
+				errorMsg = "Duplicate Invoice # in database " + pq.dbname
+				printError()
+				return
+			}
+		}(pq, vendorNum, invoiceNum)
 	}
 
+	wg.Wait()
 	return
 }
 
