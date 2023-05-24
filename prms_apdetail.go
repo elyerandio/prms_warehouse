@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/go-sql-driver/mysql"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
+	"github.com/zenthangplus/goccm"
 )
 
 type Invoice struct {
@@ -133,15 +135,16 @@ func main() {
 	var err error
 	var odbcConnectStr string
 	var mysqlConnectStr string
+	var year string
+	var processCnt int
 
 	if len(os.Args) != 5 {
-		panic("Argument count less than 4")
+		panic("Argument count less than 3")
 	} else {
 		odbcConnectStr = os.Args[1]
 		mysqlConnectStr = os.Args[2]
-		startDate := os.Args[3]
-		endDate := os.Args[4]
-		dateStart, dateEnd = checkDates(startDate, endDate)
+		year = os.Args[3]
+		processCnt, _ = strconv.Atoi(os.Args[4])
 	}
 
 	dbOdbc, err = sqlx.Open("odbc", odbcConnectStr)
@@ -157,7 +160,7 @@ func main() {
 	}
 	defer dbMysql.Close()
 
-	processAPDetailTable()
+	processAPDetailTable(year, processCnt)
 }
 
 func checkDates(startDate, endDate string) (time.Time, time.Time) {
@@ -174,7 +177,7 @@ func checkDates(startDate, endDate string) (time.Time, time.Time) {
 	return dateStart, dateEnd
 }
 
-func processAPDetailTable() {
+func processAPDetailTable(year string, processCnt int) {
 	invoice := Invoice{}
 	invoice2 := Invoice2{}
 	fields := DBFields(Invoice{})
@@ -185,8 +188,8 @@ func processAPDetailTable() {
 	fieldsCsv2 := fieldsCSV(fields2)
 	fieldsCsvColons2 := fieldsCSVColons(fields2)
 
-	selectStmt := fmt.Sprintf("SELECT %s FROM RMSMDFL#.APAPP200 WHERE aptdt BETWEEN '%s' AND '%s'",
-		fieldsCsv, dateStart.Format("2006-01-02"), dateEnd.Format("2006-01-02"))
+	selectStmt := fmt.Sprintf("SELECT %s FROM RMSMDFL#.APAPP200 WHERE YEAR(aptdt) = %s",
+		fieldsCsv, year)
 
 	rows, err := dbOdbc.Queryx(selectStmt)
 	if err != nil {
@@ -194,7 +197,8 @@ func processAPDetailTable() {
 	}
 	defer rows.Close()
 
-	newAPDetailTable := getNewAPDetailTableName()
+	// newAPDetailTable := getNewAPDetailTableName()
+	newAPDetailTable := "apapp200"
 	createAPDetailTable(newAPDetailTable)
 
 	insertStmt := fmt.Sprintf("INSERT INTO %s (%s) VALUES(%s)", newAPDetailTable, fieldsCsv2,
@@ -202,6 +206,7 @@ func processAPDetailTable() {
 	recCount := 0
 	fmt.Printf("\nTable Name : %s\n", newAPDetailTable)
 	fmt.Printf("Record # : %8d", recCount)
+	c := goccm.New(processCnt)
 	for rows.Next() {
 		recCount++
 		fmt.Printf("\b\b\b\b\b\b\b\b")
@@ -212,10 +217,20 @@ func processAPDetailTable() {
 		}
 
 		invoice2 = Invoice2(invoice)
-		_, err = dbMysql.NamedExec(insertStmt, invoice2)
-		if err != nil {
-			panic(err)
-		}
+		c.Wait()
+		go func(invoice2 Invoice2) {
+			_, err = dbMysql.NamedExec(insertStmt, invoice2)
+			c.Done()
+			if err != nil {
+				fmt.Println()
+				fmt.Println(err)
+				panic(err)
+			}
+		}(invoice2)
+	}
+
+	if c.RunningCount() > 0 {
+		c.WaitAllDone()
 	}
 	fmt.Println()
 }

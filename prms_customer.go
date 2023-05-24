@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/go-sql-driver/mysql"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
+	"github.com/zenthangplus/goccm"
 	"golang.org/x/term"
 )
 
@@ -664,21 +666,15 @@ func main() {
 	var (
 		odbcConnectStr  string
 		mysqlConnectStr string
-		startDate       string
-		endDate         string
+		processCnt      int
 	)
 
-	if len(os.Args) == 1 {
-		odbcConnectStr, mysqlConnectStr, startDate, endDate = getInputs()
-		dateStart, dateEnd = checkDates(startDate, endDate)
-	} else if len(os.Args) != 5 {
-		panic("Argument count less than 4")
+	if len(os.Args) != 4 {
+		panic("Argument count less than 3")
 	} else {
 		odbcConnectStr = os.Args[1]
 		mysqlConnectStr = os.Args[2]
-		startDate = os.Args[3]
-		endDate = os.Args[4]
-		dateStart, dateEnd = checkDates(startDate, endDate)
+		processCnt, _ = strconv.Atoi(os.Args[3])
 	}
 	dbOdbc, err = sqlx.Open("odbc", odbcConnectStr)
 	if err != nil {
@@ -693,7 +689,7 @@ func main() {
 	}
 	defer dbMysql.Close()
 
-	processCustomerTable()
+	processCustomerTable(processCnt)
 }
 
 func getInputs() (string, string, string, string) {
@@ -769,7 +765,7 @@ func checkDates(startDate, endDate string) (time.Time, time.Time) {
 	return dateStart, dateEnd
 }
 
-func processCustomerTable() {
+func processCustomerTable(processCnt int) {
 	cust := Customer{}
 	cust2 := Customer2{}
 	fields := DBFields(Customer{})
@@ -787,7 +783,8 @@ func processCustomerTable() {
 	}
 	defer rows.Close()
 
-	newCustomerTable := getNewCustomerTableName()
+	// newCustomerTable := getNewCustomerTableName()
+	newCustomerTable := "mscmp100"
 	createCustomerTable(newCustomerTable)
 
 	insertStmt := fmt.Sprintf("INSERT INTO %s (%s) VALUES(%s)", newCustomerTable, fieldsCsv2,
@@ -795,6 +792,7 @@ func processCustomerTable() {
 	recCount := 0
 	fmt.Printf("\nTable Name : %s\n", newCustomerTable)
 	fmt.Printf("Record # : %8d", recCount)
+	c := goccm.New(processCnt)
 	for rows.Next() {
 		recCount++
 		fmt.Printf("\b\b\b\b\b\b\b\b")
@@ -805,11 +803,22 @@ func processCustomerTable() {
 		}
 
 		cust2 = Customer2(cust)
-		_, err = dbMysql.NamedExec(insertStmt, cust2)
-		if err != nil {
-			panic(err)
-		}
+		c.Wait()
+		go func(cust2 Customer2) {
+			_, err = dbMysql.NamedExec(insertStmt, cust2)
+			c.Done()
+			if err != nil {
+				fmt.Println()
+				fmt.Println(err)
+				panic(err)
+			}
+		}(cust2)
 	}
+
+	if c.RunningCount() > 0 {
+		c.WaitAllDone()
+	}
+
 	fmt.Println()
 }
 

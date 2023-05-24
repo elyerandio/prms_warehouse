@@ -3,7 +3,9 @@ package main
 import (
 	"bufio"
 	"database/sql"
+	"flag"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -16,14 +18,22 @@ import (
 )
 
 func main() {
-	var sdat time.Time
-	var edat time.Time
+	// dsn := getInput("AS400 Server DSN : ")
+	// userAS, pwd, err := getCredentials()
+	// if err != nil {
+	// 	panic(err)
+	// }
 
-	dsn := getInput("AS400 Server DSN : ")
-	userAS, pwd, err := getCredentials()
-	if err != nil {
-		panic(err)
-	}
+	var processCnt string
+
+	flag.StringVar(&processCnt, "pcount", "10", "Number of concurrent process to use.")
+	flag.Parse()
+
+	timeStart := time.Now()
+
+	dsn := "PRMS"
+	userAS := "APC"
+	pwd := "prmsowner"
 
 	// connect to AS400
 	odbcConnectStr := fmt.Sprintf("DSN=%s; UID=%s; PWD=%s", dsn, userAS, pwd)
@@ -37,18 +47,23 @@ func main() {
 		panic(err)
 	}
 	defer dbOdbc.Close()
+	log.Println("Connected to PRMS")
 
+	year := getInput("\nYear to copy : ")
 	// get credentials and connect to Mysql
-	mysqlIP := getInput("\nMySQL Server IP : ")
-	user, pwd, err := getCredentials()
-	if err != nil {
-		panic(err)
-	}
+	// mysqlIP := getInput("\nMySQL Server IP : ")
+	// user, pwd, err := getCredentials()
+	// if err != nil {
+	// 	panic(err)
+	// }
+	mysqlIP := "172.20.0.39"
+	user := "edpdev"
+	pwd = "edpdev777"
 
 	// dbMysql, err = sqlx.Open("mysql", "root:justdoit@/prms?charset=utf8&parseTime=True&loc=Local")
 	// dbMysql, err = sqlx.Open("mysql", "edpdev:edpdev777@tcp(172.20.0.39:3306)/prms_ap?charset=utf8&parseTime=True&loc=Local")
-	mysqlConnectStr := fmt.Sprintf("%s:%s@tcp(%s:3306)/prms_ap?charset=utf8&parseTime=True&loc=Local",
-		user, pwd, mysqlIP)
+	mysqlConnectStr := fmt.Sprintf("%s:%s@tcp(%s:3306)/prms_%s?charset=utf8&parseTime=True&loc=Local",
+		user, pwd, mysqlIP, year)
 	dbMysql, err := sql.Open("mysql", mysqlConnectStr)
 	if err != nil {
 		panic(err)
@@ -58,20 +73,11 @@ func main() {
 		panic(err)
 	}
 	dbMysql.Close()
-
-	// read REFXDAT file in MDMOD# library to get the Start Date & End Date
-	sql := `SELECT SDAT, EDAT FROM mdmod#.refxdat`
-	err = dbOdbc.QueryRow(sql).Scan(&sdat, &edat)
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Printf("\nStart Date : %v\n", sdat.Format("2006-01-02"))
-	fmt.Printf("End Date  : %v\n", edat.Format("2006-01-02"))
+	fmt.Println()
+	log.Println("Connected to MySQL (172.20.0.39)")
 
 	// call program to create customer table
-	cmd := exec.Command("prms_customer.exe", odbcConnectStr, mysqlConnectStr,
-		sdat.Format("2006-01-02"), edat.Format("2006-01-02"))
+	cmd := exec.Command("./prms_customer.exe", odbcConnectStr, mysqlConnectStr, processCnt)
 	cmd.Stdout = os.Stdout
 	err = cmd.Run()
 
@@ -80,18 +86,7 @@ func main() {
 	}
 
 	// call program to create vendor table
-	cmd = exec.Command("prms_vendor.exe", odbcConnectStr, mysqlConnectStr,
-		sdat.Format("2006-01-02"), edat.Format("2006-01-02"))
-	cmd.Stdout = os.Stdout
-	err = cmd.Run()
-
-	if err != nil {
-		panic(err)
-	}
-
-	// call program to create ap header table
-	cmd = exec.Command("prms_apheader.exe", odbcConnectStr, mysqlConnectStr,
-		sdat.Format("2006-01-02"), edat.Format("2006-01-02"))
+	cmd = exec.Command("./prms_vendor.exe", odbcConnectStr, mysqlConnectStr, processCnt)
 	cmd.Stdout = os.Stdout
 	err = cmd.Run()
 
@@ -100,14 +95,29 @@ func main() {
 	}
 
 	// call program to create ap detail table
-	cmd = exec.Command("prms_apdetail.exe", odbcConnectStr, mysqlConnectStr,
-		sdat.Format("2006-01-02"), edat.Format("2006-01-02"))
+	cmd = exec.Command("./prms_apdetail.exe", odbcConnectStr, mysqlConnectStr, year, processCnt)
 	cmd.Stdout = os.Stdout
 	err = cmd.Run()
 
 	if err != nil {
 		panic(err)
 	}
+
+	// call program to create ap header table
+	cmd = exec.Command("./prms_apheader.exe", odbcConnectStr, mysqlConnectStr, year, processCnt)
+
+	cmd.Stdout = os.Stdout
+	err = cmd.Run()
+
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println()
+	log.Printf("Process done!\n")
+	fmt.Printf("Elapsed Time : %v\n", time.Since(timeStart))
+	fmt.Printf("Press ENTER to continue...")
+	fmt.Scanln()
 }
 
 func getInput(msg string) string {

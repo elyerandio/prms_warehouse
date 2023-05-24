@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/go-sql-driver/mysql"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
+	"github.com/zenthangplus/goccm"
 )
 
 type Invoice struct {
@@ -225,15 +227,16 @@ func main() {
 	var err error
 	var odbcConnectStr string
 	var mysqlConnectStr string
+	var year string
+	var processCnt int
 
 	if len(os.Args) != 5 {
 		panic("Argument count less than 4")
 	} else {
 		odbcConnectStr = os.Args[1]
 		mysqlConnectStr = os.Args[2]
-		startDate := os.Args[3]
-		endDate := os.Args[4]
-		dateStart, dateEnd = checkDates(startDate, endDate)
+		year = os.Args[3]
+		processCnt, _ = strconv.Atoi(os.Args[4])
 	}
 
 	dbOdbc, err = sqlx.Open("odbc", odbcConnectStr)
@@ -250,24 +253,10 @@ func main() {
 	}
 	defer dbMysql.Close()
 
-	processAPHeaderTable()
+	processAPHeaderTable(year, processCnt)
 }
 
-func checkDates(startDate, endDate string) (time.Time, time.Time) {
-	dateStart, err := time.Parse("2006-01-02", startDate)
-	if err != nil {
-		panic(err)
-	}
-
-	dateEnd, err := time.Parse("2006-01-02", endDate)
-	if err != nil {
-		panic(err)
-	}
-
-	return dateStart, dateEnd
-}
-
-func processAPHeaderTable() {
+func processAPHeaderTable(year string, processCnt int) {
 	invoice := Invoice{}
 	invoice2 := Invoice2{}
 	fields := DBFields(Invoice{})
@@ -280,8 +269,8 @@ func processAPHeaderTable() {
 
 	// selectStmt := fmt.Sprintf("SELECT %s FROM MDMOD#.APAPL100 WHERE auddt BETWEEN '%s' AND '%s'",
 	// fieldsCsv, dateStart.Format("2006-01-02"), dateEnd.Format("2006-01-02"))
-	selectStmt := fmt.Sprintf("SELECT %s FROM RMSMDFL#.APAPP100 WHERE auddt BETWEEN '%s' AND '%s'",
-		fieldsCsv, dateStart.Format("2006-01-02"), dateEnd.Format("2006-01-02"))
+	selectStmt := fmt.Sprintf("SELECT %s FROM RMSMDFL#.APAPP100 WHERE YEAR(aptdt) = %s",
+		fieldsCsv, year)
 
 	rows, err := dbOdbc.Queryx(selectStmt)
 	if err != nil {
@@ -289,7 +278,8 @@ func processAPHeaderTable() {
 	}
 	defer rows.Close()
 
-	newAPHeaderTable := getNewAPHeaderTableName()
+	// newAPHeaderTable := getNewAPHeaderTableName()
+	newAPHeaderTable := "apapp100"
 	createAPHeaderTable(newAPHeaderTable)
 
 	insertStmt := fmt.Sprintf("INSERT INTO %s (%s) VALUES(%s)", newAPHeaderTable, fieldsCSV2,
@@ -297,6 +287,7 @@ func processAPHeaderTable() {
 	recCount := 0
 	fmt.Printf("\nTable Name : %s\n", newAPHeaderTable)
 	fmt.Printf("Record # : %8d", recCount)
+	c := goccm.New(processCnt)
 	for rows.Next() {
 		recCount++
 		fmt.Printf("\b\b\b\b\b\b\b\b")
@@ -307,10 +298,20 @@ func processAPHeaderTable() {
 		}
 
 		invoice2 = Invoice2(invoice)
-		_, err = dbMysql.NamedExec(insertStmt, invoice2)
-		if err != nil {
-			panic(err)
-		}
+		c.Wait()
+		go func(invoice2 Invoice2) {
+			_, err = dbMysql.NamedExec(insertStmt, invoice2)
+			c.Done()
+			if err != nil {
+				fmt.Println()
+				fmt.Println(err)
+				panic(err)
+			}
+		}(invoice2)
+	}
+
+	if c.RunningCount() > 0 {
+		c.WaitAllDone()
 	}
 	fmt.Println()
 }

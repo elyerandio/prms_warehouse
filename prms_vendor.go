@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/go-sql-driver/mysql"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/jmoiron/sqlx"
+	"github.com/zenthangplus/goccm"
 )
 
 type Vendor struct {
@@ -242,15 +244,14 @@ func main() {
 	var err error
 	var odbcConnectStr string
 	var mysqlConnectStr string
+	var processCnt int
 
-	if len(os.Args) != 5 {
-		panic("Argument count less than 4")
+	if len(os.Args) != 4 {
+		panic("Argument count less than 3")
 	} else {
 		odbcConnectStr = os.Args[1]
 		mysqlConnectStr = os.Args[2]
-		startDate := os.Args[3]
-		endDate := os.Args[4]
-		dateStart, dateEnd = checkDates(startDate, endDate)
+		processCnt, _ = strconv.Atoi(os.Args[3])
 	}
 
 	dbOdbc, err = sqlx.Open("odbc", odbcConnectStr)
@@ -266,7 +267,7 @@ func main() {
 	}
 	defer dbMysql.Close()
 
-	processVendorTable()
+	processVendorTable(processCnt)
 }
 
 func checkDates(startDate, endDate string) (time.Time, time.Time) {
@@ -283,7 +284,7 @@ func checkDates(startDate, endDate string) (time.Time, time.Time) {
 	return dateStart, dateEnd
 }
 
-func processVendorTable() {
+func processVendorTable(processCnt int) {
 	vendor := Vendor{}
 	fields := DBFields(Vendor{})
 	fieldsCSV := fieldsCSV(fields)
@@ -296,7 +297,8 @@ func processVendorTable() {
 	}
 	defer rows.Close()
 
-	newVendorTable := getNewVendorTableName()
+	// newVendorTable := getNewVendorTableName()
+	newVendorTable := "msvmp100"
 	createVendorTable(newVendorTable)
 
 	insertStmt := fmt.Sprintf("INSERT INTO %s (%s) VALUES(%s)", newVendorTable, fieldsCSV,
@@ -304,6 +306,7 @@ func processVendorTable() {
 	recCount := 0
 	fmt.Printf("\nTable Name : %s\n", newVendorTable)
 	fmt.Printf("Record # : %8d", recCount)
+	c := goccm.New(processCnt)
 	for rows.Next() {
 		recCount++
 		fmt.Printf("\b\b\b\b\b\b\b\b")
@@ -312,10 +315,21 @@ func processVendorTable() {
 		if err != nil {
 			panic(err)
 		}
-		_, err = dbMysql.NamedExec(insertStmt, vendor)
-		if err != nil {
-			panic(err)
-		}
+
+		c.Wait()
+		go func(vendor Vendor) {
+			_, err = dbMysql.NamedExec(insertStmt, vendor)
+			c.Done()
+			if err != nil {
+				fmt.Println()
+				fmt.Println(err)
+				panic(err)
+			}
+		}(vendor)
+	}
+
+	if c.RunningCount() > 0 {
+		c.WaitAllDone()
 	}
 	fmt.Println()
 }
