@@ -6,6 +6,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -21,6 +22,8 @@ import (
 	"github.com/dustin/go-humanize"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
+	"github.com/pkg/sftp"
+	"golang.org/x/crypto/ssh"
 	"golang.org/x/term"
 )
 
@@ -429,7 +432,7 @@ type POSTGRE struct {
 var (
 	dbPostgre     *sqlx.DB
 	dbOdbc        *sqlx.DB
-	userID        string
+	userAS        string
 	inv           Invoice
 	vnd           Vendor
 	bnk           Bank
@@ -469,18 +472,25 @@ func main() {
 	openErrorFile(inputFile)
 	uploadCSV(inputFile)
 
-	fmt.Printf("\nInput record count : %d\n", lineCount)
+	fmt.Printf("\n\nInput record count : %d\n", lineCount)
 	fmt.Printf("Error count : %d\n", errorCount)
 	fmt.Printf("Uploaded count : %d\n", saveCount)
+	fmt.Print("\nPress ENTER to continue...")
+	fmt.Scanln()
 }
 
 func readIni() {
 	var err error
 
+	// dp_upload.ini is in the Linux server 172.20.0.39
+	// cpRemoteIni() copies the remote init file to local pc to be read by the program
+	iniFilename := cpRemoteIni()
+	defer os.Remove(iniFilename)
+
 	// check if ini file exists
 	cfg := &ini.File{}
-	if _, err := os.Stat("dp_upload2.ini"); err == nil {
-		cfg, err = ini.Load("dp_upload2.ini")
+	if _, err := os.Stat(iniFilename); err == nil {
+		cfg, err = ini.Load(iniFilename)
 		if err != nil {
 			panic(err)
 		}
@@ -502,7 +512,7 @@ func readIni() {
 	}
 
 	// get AS400 username from ini file
-	userAS := ""
+	userAS = ""
 	if cfg != nil {
 		userAS = cfg.Section("AS/400").Key("user").String()
 		userAS = strings.TrimSpace(userAS)
@@ -519,6 +529,12 @@ func readIni() {
 	if cfg != nil {
 		pwd = cfg.Section("AS/400").Key("pwd").String()
 		pwd = strings.TrimSpace(pwd)
+		if pwd == "" {
+			pwd, err = getCredentials(userAS)
+			if err != nil {
+				panic(err)
+			}
+		}
 	} else {
 		pwd, err = getCredentials(userAS)
 		if err != nil {
@@ -533,9 +549,58 @@ func readIni() {
 	err = dbOdbc.Ping()
 	if err != nil {
 		fmt.Println(err)
+		os.Exit(-1)
 	}
 
 	getPostgreConnections(cfg)
+}
+
+func cpRemoteIni() string {
+	remoteAddr := "172.20.0.39:22"
+	remoteUsr := "edpdev"
+	remotePwd := "edpdev777"
+	remoteIni := "/home/edpdev/prms/dp_upload.ini"
+
+	client, err := ssh.Dial("tcp", remoteAddr, &ssh.ClientConfig{
+		User: remoteUsr,
+		Auth: []ssh.AuthMethod{
+			ssh.Password(remotePwd),
+		},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	})
+	if err != nil {
+		fmt.Println("Failed to connect to the remote server:", err)
+		os.Exit(-1)
+	}
+
+	// open a SFTP session over the existing ssh connections
+	sftp, err := sftp.NewClient(client)
+
+	// open the remote ini file
+	iniRemote, err := sftp.Open(remoteIni)
+	if err != nil {
+		fmt.Println("Failed to open the remove ini file:", err)
+		os.Exit(-1)
+	}
+	defer iniRemote.Close()
+
+	// create the local temporary ini file
+	iniLocal, err := createTempFile()
+
+	// copy the file
+	iniRemote.WriteTo(iniLocal)
+	defer iniLocal.Close()
+
+	return iniLocal.Name()
+}
+
+func createTempFile() (*os.File, error) {
+	file, err := ioutil.TempFile("", "ini")
+	if err != nil {
+		return nil, err
+	}
+
+	return file, nil
 }
 
 func closeConnections() {
@@ -697,6 +762,7 @@ func uploadCSV(filename string) {
 	}
 
 	lineCount = 0
+	fmt.Printf("\nRecord # : %6d", lineCount)
 	for {
 		errorFound = false
 		record, err := r.Read()
@@ -706,13 +772,15 @@ func uploadCSV(filename string) {
 			panic(err)
 		}
 		lineCount++
+		fmt.Printf("\b\b\b\b\b\b%6d", lineCount)
 
 		inv = Invoice{}
 		currTimeStamp = time.Now()
 
 		// get the column data to upload
 		vendorNum = strings.TrimSpace(record[0])
-		invoiceNum = strings.TrimSpace(record[1])
+		// remove double quote(") in invoiceNum
+		invoiceNum = strings.ReplaceAll(strings.TrimSpace(record[1]), "\"", "")
 		strAmount = strings.TrimSpace(record[2])
 		customerNum = strings.TrimSpace(record[3])
 		invoiceDate = strings.TrimSpace(record[4])
@@ -805,7 +873,7 @@ func saveInvoice() {
 	inv.BNKNM = vnd.BNKN1
 	inv.VNDNO, _ = strconv.Atoi(vendorNum)
 	inv.INVCN = invoiceNum
-	inv.USRID = userID
+	inv.USRID = userAS
 	inv.AUDDT = currTimeStamp
 	inv.AUDTM, _ = strconv.Atoi(currTimeStamp.Format("150405"))
 	inv.ABTCH = 0
@@ -978,7 +1046,7 @@ func printError() {
 func vDuplicateInDB() {
 	// dtInvoice, _ := time.Parse("01022006", invoiceDate)
 	// stmt := `SELECT 1 FROM apapp100 WHERE vndno=$1 AND invcn=$2 AND vchno=$3 AND apidt=$4`
-	stmt := `SELECT 1 FROM apapp100 WHERE vndno=$1 AND invcn=$2`
+	stmt := `SELECT 1 FROM apapp100 WHERE vndno=$1 AND TRIM(invcn)=$2`
 
 	wg := sync.WaitGroup{}
 	for _, pq := range pqConnections {
