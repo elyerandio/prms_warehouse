@@ -32,8 +32,11 @@ func main() {
 	timeStart := time.Now()
 
 	dsn := "PRMS"
-	userAS := "APC"
-	pwd := "prmsowner"
+	// userAS := "APC"
+	// pwd := "prmsowner"
+
+	fmt.Println("Server   : PRMS")
+	userAS, pwd, err := getCredentials()
 
 	// connect to AS400
 	odbcConnectStr := fmt.Sprintf("DSN=%s; UID=%s; PWD=%s", dsn, userAS, pwd)
@@ -106,7 +109,6 @@ func main() {
 
 	// call program to create ap header table
 	cmd = exec.Command("./prms_apheader2.exe", odbcConnectStr, pqConnectStr, year, processCnt)
-
 	cmd.Stdout = os.Stdout
 	err = cmd.Run()
 

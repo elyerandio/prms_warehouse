@@ -574,6 +574,12 @@ func createVendorTable(tblName string) {
 			panic(err)
 		}
 	}
+
+	// create index
+	_, err = dbPostgre.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS msvmp100_vndno ON msvmp100 (vndno)`)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func clearTable(tblName string) {

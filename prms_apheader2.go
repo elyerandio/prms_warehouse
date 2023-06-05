@@ -253,7 +253,7 @@ func main() {
 	}
 	defer dbPostgres.Close()
 
-	go processAPHeaderTable(year, processCnt)
+	processAPHeaderTable(year, processCnt)
 }
 
 func processAPHeaderTable(year string, processCnt int) {
@@ -278,7 +278,6 @@ func processAPHeaderTable(year string, processCnt int) {
 	}
 	defer rows.Close()
 
-	// newAPHeaderTable := getNewAPHeaderTableName()
 	newAPHeaderTable := "apapp100"
 	createAPHeaderTable(newAPHeaderTable)
 
@@ -315,13 +314,6 @@ func processAPHeaderTable(year string, processCnt int) {
 		c.WaitAllDone()
 	}
 	fmt.Println()
-}
-
-func getNewAPHeaderTableName() string {
-	newDate := dateEnd.Format("200601")
-
-	newTableName := "apapp100_" + newDate[:6]
-	return newTableName
 }
 
 func createAPHeaderTable(tblName string) {
@@ -439,6 +431,22 @@ func createAPHeaderTable(tblName string) {
 		} else {
 			panic(err)
 		}
+	}
+
+	// create index
+	_, err = dbPostgres.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS apapp100_vnd_invc ON apapp100 (vndno, invcn)`)
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = dbPostgres.Exec(`CREATE INDEX IF NOT EXISTS apapp100_apidt ON apapp100 (apidt)`)
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = dbPostgres.Exec(`CREATE INDEX IF NOT EXISTS apapp100_aptdt ON apapp100 (aptdt)`)
+	if err != nil {
+		panic(err)
 	}
 }
 

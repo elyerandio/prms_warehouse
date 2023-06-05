@@ -1185,6 +1185,12 @@ func createCustomerTable(tlbName string) {
 			panic(err)
 		}
 	}
+
+	// create index
+	_, err = dbPostgre.Exec(`CREATE INDEX IF NOT EXISTS mscmp100_cusno ON mscmp100 (cusno)`)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func clearTable(tblName string) {

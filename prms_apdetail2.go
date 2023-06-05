@@ -197,7 +197,6 @@ func processAPDetailTable(year string, processCnt int) {
 	}
 	defer rows.Close()
 
-	// newAPDetailTable := getNewAPDetailTableName()
 	newAPDetailTable := "apapp200"
 	createAPDetailTable(newAPDetailTable)
 
@@ -223,7 +222,7 @@ func processAPDetailTable(year string, processCnt int) {
 			c.Done()
 			if err != nil {
 				fmt.Println()
-				fmt.Println(err)
+				fmt.Println("Error inserting record to apapp200 - " + err.Error())
 				panic(err)
 			}
 		}(invoice2)
@@ -233,13 +232,6 @@ func processAPDetailTable(year string, processCnt int) {
 		c.WaitAllDone()
 	}
 	fmt.Println()
-}
-
-func getNewAPDetailTableName() string {
-	newDate := dateEnd.Format("200601")
-
-	newTableName := "apapp200_" + newDate[:6]
-	return newTableName
 }
 
 func createAPDetailTable(tblName string) {
@@ -311,6 +303,17 @@ func createAPDetailTable(tblName string) {
 		} else {
 			panic(err)
 		}
+	}
+
+	// create index
+	_, err = dbPostgres.Exec(`CREATE INDEX IF NOT EXISTS apapp200_vnd_invc ON apapp200 (vndno, invcn)`)
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = dbPostgres.Exec(`CREATE INDEX IF NOT EXISTS apapp200_aptdt ON apapp200 (aptdt)`)
+	if err != nil {
+		panic(err)
 	}
 }
 
