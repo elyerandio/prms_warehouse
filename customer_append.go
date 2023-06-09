@@ -3,9 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
-	"os"
-	"reflect"
-	"strings"
+	"log"
 	"time"
 
 	_ "github.com/alexbrainman/odbc"
@@ -13,10 +11,6 @@ import (
 	"github.com/lib/pq"
 	_ "github.com/lib/pq"
 )
-
-var dbOdbc *sqlx.DB
-var dbPostgre *sqlx.DB
-var dateStart, dateEnd time.Time
 
 type Customer struct {
 	ACTIV string    `db:"ACTIV"`
@@ -656,39 +650,7 @@ type Customer2 struct {
 	CMLNG string    `db:"CMLNG"`
 }
 
-func main() {
-	var err error
-	var (
-		odbcConnectStr string
-		pqConnectStr   string
-		dbName         string
-	)
-
-	if len(os.Args) != 4 {
-		panic("Argument count less than 3")
-	} else {
-		odbcConnectStr = os.Args[1]
-		pqConnectStr = os.Args[2]
-		dbName = os.Args[3]
-	}
-
-	// connect to AS400
-	dbOdbc, err = sqlx.Open("odbc", odbcConnectStr)
-	if err != nil {
-		panic(err)
-	}
-	defer dbOdbc.Close()
-
-	dbPostgre, err = sqlx.Open("postgres", pqConnectStr)
-	if err != nil {
-		panic(err)
-	}
-	defer dbPostgre.Close()
-
-	appendCustomerTable(dbName)
-}
-
-func appendCustomerTable(dbName string) {
+func appendCustomerTable(dbOdbc, dbPostgre *sqlx.DB, dbName string, logfile *log.Logger) {
 	var dbErr *pq.Error
 
 	cust := Customer{}
@@ -705,6 +667,7 @@ func appendCustomerTable(dbName string) {
 	selectStmt := fmt.Sprintf("SELECT %s FROM RMSMDFL#.MSCMP100", fieldsCsv)
 	rows, err := dbOdbc.Queryx(selectStmt)
 	if err != nil {
+		logfile.Println(err)
 		panic(err)
 	}
 	defer rows.Close()
@@ -719,14 +682,18 @@ func appendCustomerTable(dbName string) {
 	updateCount := 0
 	insertCount := 0
 
-	fmt.Printf("\nTable Name : %s\n", newCustomerTable)
-	fmt.Printf("Record # : %8d", recCount)
+	fmt.Printf("\nDB Name      : %s\n", dbName)
+	fmt.Printf("Table Name   : %s\n", newCustomerTable)
+	fmt.Printf("Record #     : %8d", recCount)
+	logfile.Printf("DB Name      : %s\n", dbName)
+	logfile.Printf("Table Name   : %s\n", newCustomerTable)
 	for rows.Next() {
 		recCount++
 		fmt.Printf("\b\b\b\b\b\b\b\b")
 		fmt.Printf("%8d", recCount)
 		err = rows.StructScan(&cust)
 		if err != nil {
+			logfile.Println(err)
 			panic(err)
 		}
 
@@ -741,6 +708,7 @@ func appendCustomerTable(dbName string) {
 					if err != nil {
 						fmt.Println()
 						fmt.Println("Update error:", err)
+						logfile.Println(err)
 						panic(err)
 					} else {
 						updateCount++
@@ -748,11 +716,13 @@ func appendCustomerTable(dbName string) {
 				} else {
 					fmt.Println()
 					fmt.Println("Insert error:", err)
+					logfile.Println(err)
 					panic(err)
 				}
 			} else {
 				fmt.Println()
 				fmt.Println(err)
+				logfile.Println(err)
 				panic(err)
 			}
 		} else {
@@ -761,61 +731,9 @@ func appendCustomerTable(dbName string) {
 	}
 
 	fmt.Println()
-	fmt.Printf("Append count : %d\n", insertCount)
-	fmt.Printf("Update count : %d\n", updateCount)
-}
-
-func DBFields(values interface{}) []string {
-	v := reflect.ValueOf(values)
-	if v.Kind() == reflect.Ptr {
-		v = v.Elem()
-	}
-	fields := []string{}
-	if v.Kind() == reflect.Struct {
-		for i := 0; i < v.NumField(); i++ {
-			field := v.Type().Field(i).Tag.Get("db")
-			// fmt.Printf("i=%d\tfield=%s\n", i, field)
-			if field != "" {
-				fields = append(fields, field)
-			}
-		}
-		return fields
-	}
-	if v.Kind() == reflect.Map {
-		for _, key := range v.MapKeys() {
-			fields = append(fields, key.String())
-		}
-		return fields
-	}
-
-	panic(fmt.Errorf("DBFields requires a struct or a map, found: %s", v.Kind().String()))
-}
-
-func fieldsCSV(fields []string) string {
-	return strings.Join(fields, ", ")
-}
-
-func fieldsCSVColons(fields []string) string {
-	var result string
-
-	for i, s := range fields {
-		result += fmt.Sprintf(":%s", s)
-		if i != len(fields)-1 {
-			result += ", "
-		}
-	}
-	return result
-}
-
-func fieldsUpdate(fields []string) string {
-	var result string
-
-	for i, s := range fields {
-		result += fmt.Sprintf("%s=:%s", s, s)
-		if i != len(fields)-1 {
-			result += ", "
-		}
-	}
-
-	return result
+	fmt.Printf("Append count : %8d\n", insertCount)
+	fmt.Printf("Update count : %8d\n", updateCount)
+	logfile.Printf("Record count : %d\n", recCount)
+	logfile.Printf("Append count : %d\n", insertCount)
+	logfile.Printf("Update count : %d\n\n", updateCount)
 }

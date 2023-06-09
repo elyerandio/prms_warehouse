@@ -1,13 +1,16 @@
 package main
 
+// prms_append.go
+// To compile : go build -o prms_append.exe prms_append.go customer_append.go vendor_append.go apdetail_append.go apheader_append.go
+
 import (
 	"bufio"
-	"database/sql"
+	// "database/sql"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
-	"os/exec"
+	"reflect"
 	"strings"
 	"syscall"
 	"time"
@@ -15,85 +18,80 @@ import (
 	"gopkg.in/ini.v1"
 
 	_ "github.com/alexbrainman/odbc"
+	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/term"
 )
 
+var dbOdbc *sqlx.DB
+var dbPostgre *sqlx.DB
+
 func main() {
 	timeStart := time.Now()
 
-	dsn := "PRMS"
+	// opens logfile prms_append.log
+	f, err := os.OpenFile("prms_append.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		log.Fatal("error opening logfile :%v", err)
+	}
+	defer f.Close()
+	logfile := log.New(f, "", log.Ldate|log.Ltime)
 
+	logfile.Printf("Starting prms_append")
+
+	dsn := "PRMS"
 	fmt.Println("Server   :", dsn)
 	userAS, pwd, err := getCredentials()
 
 	// connect to AS400
 	odbcConnectStr := fmt.Sprintf("DSN=%s; UID=%s; PWD=%s", dsn, userAS, pwd)
-	dbOdbc, err := sql.Open("odbc", odbcConnectStr)
+	dbOdbc, err := sqlx.Open("odbc", odbcConnectStr)
 	if err != nil {
+		logfile.Println(err)
 		panic(err)
 	}
 	err = dbOdbc.Ping()
 	if err != nil {
+		logfile.Println(err)
 		panic(err)
 	}
 	defer dbOdbc.Close()
-	log.Println("Connected to PRMS")
+	log.Println("Connected to", dsn)
 
 	pqConnectStr, dbname := readIni()
-	dbPostgre, err := sql.Open("postgres", pqConnectStr)
+	dbPostgre, err := sqlx.Open("postgres", pqConnectStr)
 	if err != nil {
+		logfile.Println(err)
 		panic(err)
 	}
 	err = dbPostgre.Ping()
 	if err != nil {
+		logfile.Println(err)
 		panic(err)
 	}
-	dbPostgre.Close()
+	defer dbPostgre.Close()
 	fmt.Println()
 	log.Println("Connected to PostgreSQL (172.20.0.39)")
 
-	// call program to update customer table
-	cmd := exec.Command("./customer_append.exe", odbcConnectStr, pqConnectStr, dbname)
-	cmd.Stdout = os.Stdout
-	err = cmd.Run()
+	// call function to update customer table
+	appendCustomerTable(dbOdbc, dbPostgre, dbname, logfile)
 
-	if err != nil {
-		panic(err)
-	}
+	// call function to update vendor table
+	appendVendorTable(dbOdbc, dbPostgre, dbname, logfile)
 
-	// call program to update vendor table
-	cmd = exec.Command("./vendor_append.exe", odbcConnectStr, pqConnectStr, dbname)
-	cmd.Stdout = os.Stdout
-	err = cmd.Run()
+	// call function to update ap detail table
+	updateAPDetailTable(dbOdbc, dbPostgre, dbname, logfile)
 
-	if err != nil {
-		panic(err)
-	}
-
-	// call program to update ap detail table
-	cmd = exec.Command("./apdetail_append.exe", odbcConnectStr, pqConnectStr, dbname)
-	cmd.Stdout = os.Stdout
-	err = cmd.Run()
-
-	if err != nil {
-		panic(err)
-	}
-
-	// call program to update ap header table
-	cmd = exec.Command("./apheader_append.exe", odbcConnectStr, pqConnectStr, dbname)
-	cmd.Stdout = os.Stdout
-	err = cmd.Run()
-
-	if err != nil {
-		panic(err)
-	}
+	// call function to update ap header table
+	updateAPHeaderTable(dbOdbc, dbPostgre, dbname, logfile)
 
 	fmt.Println()
 	log.Printf("Process done!\n")
 	fmt.Printf("Elapsed Time : %v\n", time.Since(timeStart))
+	logfile.Printf("Process done!\n")
+	logfile.Printf("Elapsed Time : %v\n\n", time.Since(timeStart))
 	fmt.Printf("\nPress ENTER to continue...")
 	fmt.Scanln()
 }
@@ -216,4 +214,59 @@ func createTempFile() (*os.File, error) {
 	}
 
 	return file, nil
+}
+
+func DBFields(values interface{}) []string {
+	v := reflect.ValueOf(values)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+	fields := []string{}
+	if v.Kind() == reflect.Struct {
+		for i := 0; i < v.NumField(); i++ {
+			field := v.Type().Field(i).Tag.Get("db")
+			// fmt.Printf("i=%d\tfield=%s\n", i, field)
+			if field != "" {
+				fields = append(fields, field)
+			}
+		}
+		return fields
+	}
+	if v.Kind() == reflect.Map {
+		for _, key := range v.MapKeys() {
+			fields = append(fields, key.String())
+		}
+		return fields
+	}
+
+	panic(fmt.Errorf("DBFields requires a struct or a map, found: %s", v.Kind().String()))
+}
+
+func fieldsCSV(fields []string) string {
+	return strings.Join(fields, ", ")
+}
+
+func fieldsCSVColons(fields []string) string {
+	var result string
+
+	for i, s := range fields {
+		result += fmt.Sprintf(":%s", s)
+		if i != len(fields)-1 {
+			result += ", "
+		}
+	}
+	return result
+}
+
+func fieldsUpdate(fields []string) string {
+	var result string
+
+	for i, s := range fields {
+		result += fmt.Sprintf("%s=:%s", s, s)
+		if i != len(fields)-1 {
+			result += ", "
+		}
+	}
+
+	return result
 }

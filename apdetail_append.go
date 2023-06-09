@@ -3,9 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
-	"os"
-	"reflect"
-	"strings"
+	"log"
 	"time"
 
 	_ "github.com/alexbrainman/odbc"
@@ -14,7 +12,7 @@ import (
 	"github.com/lib/pq"
 )
 
-type Invoice struct {
+type InvoiceDetail struct {
 	ACTIV string    `db:"ACTIV"`
 	CMPNO int       `db:"CMPNO"`
 	PLTNO int       `db:"PLTNO"`
@@ -68,7 +66,7 @@ type Invoice struct {
 	APIGL float64   `db:"APIGL"`
 }
 
-type Invoice2 struct {
+type InvoiceDetail2 struct {
 	ACTIV string    `db:"ACTIV"`
 	CMPNO int       `db:"CMPNO"`
 	PLTNO int       `db:"PLTNO"`
@@ -122,73 +120,37 @@ type Invoice2 struct {
 	APIGL float64   `db:"APIGL"`
 }
 
-var (
-	dbOdbc     *sqlx.DB
-	dbPostgres *sqlx.DB
-	dateStart  time.Time
-	dateEnd    time.Time
-)
-
-func main() {
-	var err error
-	var odbcConnectStr string
-	var pqConnectStr string
-	var dbName string
-
-	if len(os.Args) != 4 {
-		fmt.Println("apdetail_update - argument count less than 3")
-		panic("Argument count less than 3")
-	} else {
-		odbcConnectStr = os.Args[1]
-		pqConnectStr = os.Args[2]
-		dbName = os.Args[3]
-	}
-
-	dbOdbc, err = sqlx.Open("odbc", odbcConnectStr)
-	if err != nil {
-		fmt.Println("\napdetail_update - cannot connect", odbcConnectStr)
-		panic(err)
-	}
-	defer dbOdbc.Close()
-
-	dbPostgres, err = sqlx.Open("postgres", pqConnectStr)
-	if err != nil {
-		fmt.Println("\napdetail_update - cannot connect", pqConnectStr)
-		panic(err)
-	}
-	defer dbPostgres.Close()
-
-	updateAPDetailTable(dbName)
-}
-
-func updateAPDetailTable(dbName string) {
+func updateAPDetailTable(dbOdbc, dbPostgre *sqlx.DB, dbName string, logfile *log.Logger) {
 	var dbErr *pq.Error
 
-	invoice := Invoice{}
-	invoice2 := Invoice2{}
-	fields := DBFields(Invoice{})
+	invoice := InvoiceDetail{}
+	invoice2 := InvoiceDetail2{}
+	fields := DBFields(InvoiceDetail{})
 	fieldsCsv := fieldsCSV(fields)
 	// fieldsCsvColons := fieldsCSVColons(fields)
 
-	fields2 := DBFields(Invoice2{})
+	fields2 := DBFields(InvoiceDetail2{})
 	fieldsCsv2 := fieldsCSV(fields2)
 	fieldsCsvColons2 := fieldsCSVColons(fields2)
 
 	// get the latest aptdt from apapp200 in PostgreSQL
 	latestDate := time.Now()
-	err := dbPostgres.QueryRow("SELECT max(aptdt) FROM apapp200").Scan(&latestDate)
+	err := dbPostgre.QueryRow("SELECT max(aptdt) FROM apapp200").Scan(&latestDate)
 	if err != nil {
 		if errors.As(err, &dbErr) {
 			fmt.Printf("apdetail_update max(aptdt) - %s - %#v", dbErr.Code, err)
+			fmt.Println(err)
 			panic(err)
 		} else {
 			fmt.Println("apdetail_update max(aptdt)", err)
 			fmt.Println(dbErr.Code)
+			fmt.Println(err)
 			panic(err)
 		}
 	}
 
-	fmt.Printf("\nUploading apapp200 records with transaction date of %s and newer\n", latestDate.Format("2006-01-02"))
+	fmt.Printf("\nCopying apapp200 records with transaction date of %s and newer\n", latestDate.Format("2006-01-02"))
+	logfile.Printf("Copying apapp200 records with transaction date of %s and newer\n", latestDate.Format("2006-01-02"))
 	selectStmt := fmt.Sprintf("SELECT %s FROM RMSMDFL#.APAPP200 WHERE aptdt >= '%s'",
 		fieldsCsv, latestDate.Format("2006-01-02"))
 
@@ -203,20 +165,23 @@ func updateAPDetailTable(dbName string) {
 	insCount := 0
 	dupCount := 0
 
-	fmt.Printf("\nDatabase Name   : %s\n", dbName)
+	fmt.Printf("\nDB Name         : %s\n", dbName)
 	fmt.Printf("Table Name      : %s\n", "apapp200")
 	fmt.Printf("Record #        : %8d", recCount)
+	logfile.Printf("DB Name         : %s\n", dbName)
+	logfile.Printf("Table Name      : %s\n", "apapp200")
 	for rows.Next() {
 		recCount++
 		fmt.Printf("\b\b\b\b\b\b\b\b")
 		fmt.Printf("%8d", recCount)
 		err = rows.StructScan(&invoice)
 		if err != nil {
+			logfile.Println(err)
 			panic(err)
 		}
 
-		invoice2 = Invoice2(invoice)
-		_, err = dbPostgres.NamedExec(insertStmt, invoice2)
+		invoice2 = InvoiceDetail2(invoice)
+		_, err = dbPostgre.NamedExec(insertStmt, invoice2)
 		if err != nil {
 			if errors.As(err, &dbErr) {
 				// 23505 = Unique key violation
@@ -227,11 +192,13 @@ func updateAPDetailTable(dbName string) {
 				} else {
 					fmt.Println()
 					fmt.Println(err)
+					logfile.Println(err)
 					panic(err)
 				}
 			} else {
 				fmt.Println()
 				fmt.Println(err)
+				logfile.Println(err)
 				panic(err)
 			}
 		} else {
@@ -240,48 +207,9 @@ func updateAPDetailTable(dbName string) {
 	}
 
 	fmt.Println()
-	fmt.Printf("Append count    : %d\n", insCount)
-	fmt.Printf("Duplicate count : %d\n", dupCount)
-}
-
-func DBFields(values interface{}) []string {
-	v := reflect.ValueOf(values)
-	if v.Kind() == reflect.Ptr {
-		v = v.Elem()
-	}
-	fields := []string{}
-	if v.Kind() == reflect.Struct {
-		for i := 0; i < v.NumField(); i++ {
-			field := v.Type().Field(i).Tag.Get("db")
-			// fmt.Printf("i=%d\tfield=%s\n", i, field)
-			if field != "" {
-				fields = append(fields, field)
-			}
-		}
-		return fields
-	}
-	if v.Kind() == reflect.Map {
-		for _, key := range v.MapKeys() {
-			fields = append(fields, key.String())
-		}
-		return fields
-	}
-
-	panic(fmt.Errorf("DBFields requires a struct or a map, found: %s", v.Kind().String()))
-}
-
-func fieldsCSV(fields []string) string {
-	return strings.Join(fields, ", ")
-}
-
-func fieldsCSVColons(fields []string) string {
-	var result string
-
-	for i, s := range fields {
-		result += fmt.Sprintf(":%s", s)
-		if i != len(fields)-1 {
-			result += ", "
-		}
-	}
-	return result
+	fmt.Printf("Append count    : %8d\n", insCount)
+	fmt.Printf("Duplicate count : %8d\n", dupCount)
+	logfile.Printf("Record count    : %d\n", recCount)
+	logfile.Printf("Append count    : %d\n", insCount)
+	logfile.Printf("Duplicate count : %d\n\n", dupCount)
 }
