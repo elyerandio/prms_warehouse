@@ -26,7 +26,7 @@ func main() {
 
 	dsn := "PRMS"
 
-	fmt.Println("Server   : PRMS")
+	fmt.Println("Server   :", dsn)
 	userAS, pwd, err := getCredentials()
 
 	// connect to AS400
@@ -56,16 +56,16 @@ func main() {
 	log.Println("Connected to PostgreSQL (172.20.0.39)")
 
 	// call program to update customer table
-	// cmd := exec.Command("./customer_update.exe", odbcConnectStr, pqConnectStr)
-	// cmd.Stdout = os.Stdout
-	// err = cmd.Run()
+	cmd := exec.Command("./customer_append.exe", odbcConnectStr, pqConnectStr, dbname)
+	cmd.Stdout = os.Stdout
+	err = cmd.Run()
 
-	// if err != nil {
-	// 	panic(err)
-	// }
+	if err != nil {
+		panic(err)
+	}
 
 	// call program to update vendor table
-	cmd := exec.Command("./vendor_append.exe", odbcConnectStr, pqConnectStr, dbname)
+	cmd = exec.Command("./vendor_append.exe", odbcConnectStr, pqConnectStr, dbname)
 	cmd.Stdout = os.Stdout
 	err = cmd.Run()
 
@@ -74,22 +74,22 @@ func main() {
 	}
 
 	// call program to update ap detail table
-	// cmd := exec.Command("./apdetail_append.exe", odbcConnectStr, pqConnectStr, dbname)
-	// cmd.Stdout = os.Stdout
-	// err = cmd.Run()
+	cmd = exec.Command("./apdetail_append.exe", odbcConnectStr, pqConnectStr, dbname)
+	cmd.Stdout = os.Stdout
+	err = cmd.Run()
 
-	// if err != nil {
-	// 	panic(err)
-	// }
+	if err != nil {
+		panic(err)
+	}
 
 	// call program to update ap header table
-	// cmd = exec.Command("./apheader_append.exe", odbcConnectStr, pqConnectStr, dbname)
-	// cmd.Stdout = os.Stdout
-	// err = cmd.Run()
+	cmd = exec.Command("./apheader_append.exe", odbcConnectStr, pqConnectStr, dbname)
+	cmd.Stdout = os.Stdout
+	err = cmd.Run()
 
-	// if err != nil {
-	// 	panic(err)
-	// }
+	if err != nil {
+		panic(err)
+	}
 
 	fmt.Println()
 	log.Printf("Process done!\n")

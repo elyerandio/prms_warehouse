@@ -280,7 +280,7 @@ func updateAPHeaderTable(dbName string) {
 		}
 	}
 
-	fmt.Printf("\nUploading records with transaction date of %s and newer\n", latestDate.Format("2006-01-02"))
+	fmt.Printf("\nUploading apapp100 records with transaction date of %s and newer\n", latestDate.Format("2006-01-02"))
 	selectStmt := fmt.Sprintf("SELECT %s FROM RMSMDFL#.APAPP100 WHERE aptdt >= '%s'",
 		fieldsCsv, latestDate.Format("2006-01-02"))
 
@@ -333,7 +333,7 @@ func updateAPHeaderTable(dbName string) {
 	}
 
 	fmt.Println()
-	fmt.Printf("Uploaded count  : %d\n", insCount)
+	fmt.Printf("Append count    : %d\n", insCount)
 	fmt.Printf("Duplicate count : %d\n", dupCount)
 }
 

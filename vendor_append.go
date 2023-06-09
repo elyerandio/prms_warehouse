@@ -276,10 +276,6 @@ func appendVendorTable(dbName string) {
 	fieldsCSVColons := fieldsCSVColons(fields)
 	fieldsUpdate := fieldsUpdate(fields)
 
-	fmt.Println("\nfields:", fields)
-	fmt.Println("\nfieldsCSV:", fieldsCSV)
-	fmt.Println("\nfieldsCSVColons:", fieldsCSVColons)
-	fmt.Println("\nfieldsUpdate:", fieldsUpdate)
 	selectStmt := fmt.Sprintf("SELECT %s FROM RMSMDFL#.MSVMP100", fieldsCSV)
 	rows, err := dbOdbc.Queryx(selectStmt)
 	if err != nil {
@@ -293,10 +289,10 @@ func appendVendorTable(dbName string) {
 	insertStmt := fmt.Sprintf("INSERT INTO %s (%s) VALUES(%s)", newVendorTable, fieldsCSV,
 		fieldsCSVColons)
 	updateStmt := fmt.Sprintf("UPDATE msvmp100 SET %s WHERE vndno=:VNDNO", fieldsUpdate)
-	fmt.Println("\nUpdate Statement:", updateStmt)
 
 	recCount := 0
 	updateCount := 0
+	insertCount := 0
 	fmt.Printf("\nTable Name : %s\n", newVendorTable)
 	fmt.Printf("Record # : %8d", recCount)
 	for rows.Next() {
@@ -312,7 +308,7 @@ func appendVendorTable(dbName string) {
 
 		_, err = dbPostgre.NamedExec(insertStmt, vendor)
 		if err != nil {
-			if errors.As(err, dbError) {
+			if errors.As(err, &dbError) {
 				// 23505 = Unique key violation
 				// if unique key violation, update the record
 				if dbError.Code == "23505" {
@@ -334,10 +330,13 @@ func appendVendorTable(dbName string) {
 				fmt.Println("Insert error 2", err)
 				panic(err)
 			}
+		} else {
+			insertCount++
 		}
 	}
 
 	fmt.Println()
+	fmt.Printf("Append count : %d\n", insertCount)
 	fmt.Printf("Update count : %d\n", updateCount)
 }
 

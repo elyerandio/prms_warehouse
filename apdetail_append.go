@@ -188,7 +188,7 @@ func updateAPDetailTable(dbName string) {
 		}
 	}
 
-	fmt.Printf("\nUploading records with transaction date of %s and newer\n", latestDate.Format("2006-01-02"))
+	fmt.Printf("\nUploading apapp200 records with transaction date of %s and newer\n", latestDate.Format("2006-01-02"))
 	selectStmt := fmt.Sprintf("SELECT %s FROM RMSMDFL#.APAPP200 WHERE aptdt >= '%s'",
 		fieldsCsv, latestDate.Format("2006-01-02"))
 
@@ -218,7 +218,7 @@ func updateAPDetailTable(dbName string) {
 		invoice2 = Invoice2(invoice)
 		_, err = dbPostgres.NamedExec(insertStmt, invoice2)
 		if err != nil {
-			if errors.As(err, dbErr) {
+			if errors.As(err, &dbErr) {
 				// 23505 = Unique key violation
 				// ignore unique key violation, continue to the next record
 				if dbErr.Code == "23505" {
@@ -234,12 +234,13 @@ func updateAPDetailTable(dbName string) {
 				fmt.Println(err)
 				panic(err)
 			}
+		} else {
+			insCount++
 		}
-		insCount++
 	}
 
 	fmt.Println()
-	fmt.Printf("Uploaded count  : %d\n", insCount)
+	fmt.Printf("Append count    : %d\n", insCount)
 	fmt.Printf("Duplicate count : %d\n", dupCount)
 }
 
