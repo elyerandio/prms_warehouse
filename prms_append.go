@@ -6,6 +6,7 @@ package main
 import (
 	"bufio"
 	// "database/sql"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -27,9 +28,19 @@ import (
 
 var dbOdbc *sqlx.DB
 var dbPostgre *sqlx.DB
+var vendorAppend bool
+var customerAppend bool
+var detailAppend bool
+var headerAppend bool
 
 func main() {
 	timeStart := time.Now()
+
+	flag.BoolVar(&vendorAppend, "vendor", false, "Append Vendor Table")
+	flag.BoolVar(&customerAppend, "customer", false, "Append Customer Table")
+	flag.BoolVar(&detailAppend, "detail", false, "Append Detail Table")
+	flag.BoolVar(&headerAppend, "header", false, "Append Header Table")
+	flag.Parse()
 
 	// opens logfile prms_append.log
 	f, err := os.OpenFile("prms_append.log", os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
@@ -75,17 +86,36 @@ func main() {
 	fmt.Println()
 	log.Println("Connected to PostgreSQL (172.20.0.39)")
 
-	// call function to update customer table
-	appendCustomerTable(dbOdbc, dbPostgre, dbname, logfile)
+	// check if there are flag arguments, then append only the flags given
+	if vendorAppend || customerAppend || detailAppend || headerAppend {
+		if customerAppend {
+			appendCustomerTable(dbOdbc, dbPostgre, dbname, logfile)
+		}
 
-	// call function to update vendor table
-	appendVendorTable(dbOdbc, dbPostgre, dbname, logfile)
+		if vendorAppend {
+			appendVendorTable(dbOdbc, dbPostgre, dbname, logfile)
+		}
 
-	// call function to update ap detail table
-	updateAPDetailTable(dbOdbc, dbPostgre, dbname, logfile)
+		if headerAppend {
+			updateAPHeaderTable(dbOdbc, dbPostgre, dbname, logfile)
+		}
 
-	// call function to update ap header table
-	updateAPHeaderTable(dbOdbc, dbPostgre, dbname, logfile)
+		if detailAppend {
+			updateAPDetailTable(dbOdbc, dbPostgre, dbname, logfile)
+		}
+	} else {
+		// call function to update customer table
+		appendCustomerTable(dbOdbc, dbPostgre, dbname, logfile)
+
+		// call function to update vendor table
+		appendVendorTable(dbOdbc, dbPostgre, dbname, logfile)
+
+		// call function to update ap detail table
+		updateAPDetailTable(dbOdbc, dbPostgre, dbname, logfile)
+
+		// call function to update ap header table
+		updateAPHeaderTable(dbOdbc, dbPostgre, dbname, logfile)
+	}
 
 	fmt.Println()
 	log.Printf("Process done!\n")
