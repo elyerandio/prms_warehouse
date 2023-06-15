@@ -35,7 +35,7 @@ func main() {
 	// userAS := "APC"
 	// pwd := "prmsowner"
 
-	fmt.Println("Server   : PRMS")
+	fmt.Println("Server   :", dsn)
 	userAS, pwd, err := getCredentials()
 
 	// connect to AS400

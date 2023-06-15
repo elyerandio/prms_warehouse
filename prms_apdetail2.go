@@ -244,7 +244,7 @@ func createAPDetailTable(tblName string) {
 		APRCD char(1),
 		BNKNM int,
 		VNDNO int,
-		INVCN varchar(10),
+		INVCN varchar(15),
 		USRID varchar(10),
 		AUDDT date,
 		AUDTM int,
@@ -306,7 +306,7 @@ func createAPDetailTable(tblName string) {
 	}
 
 	// create index
-	_, err = dbPostgres.Exec(`CREATE INDEX IF NOT EXISTS apapp200_vnd_invc ON apapp200 (vndno, invcn)`)
+	_, err = dbPostgres.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS apapp200_vnd_invc_seq ON apapp200 (vndno, invcn, seqno)`)
 	if err != nil {
 		panic(err)
 	}

@@ -326,7 +326,7 @@ func createAPHeaderTable(tblName string) {
 		APRCD char(1),
 		BNKNM int,
 		VNDNO int,
-		INVCN varchar(10),
+		INVCN varchar(15),
 		USRID varchar(10),
 		AUDDT date,
 		AUDTM int,

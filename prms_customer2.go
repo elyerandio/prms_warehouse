@@ -677,27 +677,11 @@ func main() {
 		processCnt, _ = strconv.Atoi(os.Args[3])
 	}
 
-	dsn := "PRMS"
-	userAS := "APC"
-	pwd := "prmsowner"
-	processCnt = 50
-
-	// connect to AS400
-	odbcConnectStr = fmt.Sprintf("DSN=%s; UID=%s; PWD=%s", dsn, userAS, pwd)
-
 	dbOdbc, err = sqlx.Open("odbc", odbcConnectStr)
 	if err != nil {
 		panic(err)
 	}
 	defer dbOdbc.Close()
-
-	// pqIP := "172.20.0.39"
-	// user := "edpdev"
-	// pwd = "edpdev777"
-	// year := "2017"
-
-	// pqConnectStr = fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=prms_%s sslmode=disable",
-	// pqIP, "5432", user, pwd, year)
 
 	dbPostgre, err = sqlx.Open("postgres", pqConnectStr)
 	if err != nil {
@@ -1187,7 +1171,7 @@ func createCustomerTable(tlbName string) {
 	}
 
 	// create index
-	_, err = dbPostgre.Exec(`CREATE INDEX IF NOT EXISTS mscmp100_cusno ON mscmp100 (cusno)`)
+	_, err = dbPostgre.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS mscmp100_cusno ON mscmp100 (cusno)`)
 	if err != nil {
 		panic(err)
 	}
