@@ -438,6 +438,7 @@ var (
 	bnk           Bank
 	runType       string
 	errorFile     *os.File
+	passFile      *os.File
 	errorMsg      string
 	errorFound    bool
 	lineCount     int
@@ -469,6 +470,7 @@ func main() {
 
 	getSystemControl()
 	inputFile := getInput("\nFile to upload : ")
+	openSuccessFile(inputFile)
 	openErrorFile(inputFile)
 	uploadCSV(inputFile)
 
@@ -695,13 +697,21 @@ func getSystemControl() {
 
 	// get APPERD
 	err := dbOdbc.QueryRow(stmt, "APPERD", 777, 0).Scan(&wcdta)
-	if err != nil {
+	if err == sql.ErrNoRows {
+		errorFound = true
+		errorMsg = "APPERD code not found in MSWCP100"
+		printError()
+	} else if err != nil {
 		panic(err)
 	}
 
 	// get APGLAC -> Default G/L Accounts
 	err = dbOdbc.QueryRow(stmt, "APGLAC", 777, 0).Scan(&wcdta)
-	if err != nil {
+	if err == sql.ErrNoRows {
+		errorFound = true
+		errorMsg = "APGLAC code not found in MSWCP100"
+		printError()
+	} else if err != nil {
 		panic(err)
 	}
 	apglac = APGLAC{}
@@ -711,13 +721,21 @@ func getSystemControl() {
 
 	// get APCLOS
 	err = dbOdbc.QueryRow(stmt, "APCLOS", 777, 0).Scan(&wcdta)
-	if err != nil {
+	if err == sql.ErrNoRows {
+		errorFound = true
+		errorMsg = "APCLOS code not found in MSWCP100"
+		printError()
+	} else if err != nil {
 		panic(err)
 	}
 
 	// get MSCURR
 	err = dbOdbc.QueryRow(stmt, "MSCURR", 777, 0).Scan(&wcdta)
-	if err != nil {
+	if err == sql.ErrNoRows {
+		errorFound = true
+		errorMsg = "MSCURR code not found in MSWCP100"
+		printError()
+	} else if err != nil {
 		panic(err)
 	}
 	mscurr = MSCURR{}
@@ -751,7 +769,35 @@ func openErrorFile(inputFile string) {
 		space, "INVOICE DATE", space, "REMARKS")
 	fmt.Fprintf(errorFile, "%s\n", strings.Repeat("-", 150))
 
-	fmt.Println("Error file : ", errorFileName)
+	fmt.Println("Error file     : ", errorFileName)
+}
+
+func openSuccessFile(inputFile string) {
+	var err error
+
+	// extract the filename w/o file extension
+	successFileName := strings.TrimSuffix(inputFile, filepath.Ext(inputFile))
+
+	// add .pass file extension
+	successFileName += ".pass"
+
+	// create the success file
+	passFile, err = os.Create(successFileName)
+	if err != nil {
+		panic(err)
+	}
+
+	// write header to the success file
+	space := " "
+	fmt.Fprintf(passFile, "%sAP Uploading Output Report%s%s\n", strings.Repeat(" ", 60),
+		strings.Repeat(" ", 55), time.Now().Format("01/02/2006"))
+	fmt.Fprintf(passFile, "%s%s Run\n\n", strings.Repeat(" ", 67), runType)
+	fmt.Fprintf(passFile, "%6.6s%4.4s%s%6.6s%s%-20.20s%s%-14.14s%s%-9.9s%s%-12.12s%s\n",
+		"LINE #", space, "VENDOR #", space, "INVOICE #", space, "INVOICE AMOUNT", space, "VOUCHER #",
+		space, "INVOICE DATE", space, "REMARKS")
+	fmt.Fprintf(passFile, "%s\n", strings.Repeat("-", 150))
+
+	fmt.Println("Success file   : ", successFileName)
 }
 
 func uploadCSV(filename string) {
@@ -788,6 +834,12 @@ func uploadCSV(filename string) {
 		customerNum = strings.TrimSpace(record[3])
 		invoiceDate = strings.TrimSpace(record[4])
 
+		// validate Invoice Date
+		if vInvoiceDate() {
+			errorFound = true
+			printError()
+		}
+
 		vDuplicateInInputFile()
 		vDuplicateInDB()
 
@@ -801,18 +853,18 @@ func uploadCSV(filename string) {
 				errorFound = true
 				errorMsg = "Vendor not found."
 				printError()
+			} else {
+				if vnd.VDDGL == 0 {
+					errorFound = true
+					errorMsg = "Missing Vendor G/L Account"
+					printError()
+				}
 			}
 		}
 
 		vInvoiceNumber()
 		vAmount()
 		vCustomerNumber()
-
-		// validate Invoice Date
-		if vInvoiceDate() {
-			errorFound = true
-			printError()
-		}
 
 		// get bank details from AS400
 		bnk, err = getBank()
@@ -1053,24 +1105,24 @@ func printError() {
 }
 
 func printRemark() {
-	fmt.Fprintf(errorFile, "%05d", lineCount)
-	fmt.Fprintf(errorFile, "%5.5s", " ")
-	fmt.Fprintf(errorFile, "%6.6s", vendorNum)
-	fmt.Fprintf(errorFile, "%8.8s", " ")
-	fmt.Fprintf(errorFile, "%-20.20s", invoiceNum)
-	fmt.Fprintf(errorFile, "%9.9s", " ")
+	fmt.Fprintf(passFile, "%05d", lineCount)
+	fmt.Fprintf(passFile, "%5.5s", " ")
+	fmt.Fprintf(passFile, "%6.6s", vendorNum)
+	fmt.Fprintf(passFile, "%8.8s", " ")
+	fmt.Fprintf(passFile, "%-20.20s", invoiceNum)
+	fmt.Fprintf(passFile, "%9.9s", " ")
 
 	amount, _ := strconv.ParseFloat(strAmount, 64)
-	fmt.Fprintf(errorFile, "%14.14s", humanize.FormatFloat("#,###.##", amount))
-	fmt.Fprintf(errorFile, "%14.14s", " ")
-	fmt.Fprintf(errorFile, "%6.6s", customerNum)
-	fmt.Fprintf(errorFile, "%12.12s", " ")
-	fmt.Fprintf(errorFile, "%8.8s", invoiceDate)
-	fmt.Fprintf(errorFile, "%16.16s", " ")
+	fmt.Fprintf(passFile, "%14.14s", humanize.FormatFloat("#,###.##", amount))
+	fmt.Fprintf(passFile, "%14.14s", " ")
+	fmt.Fprintf(passFile, "%6.6s", customerNum)
+	fmt.Fprintf(passFile, "%12.12s", " ")
+	fmt.Fprintf(passFile, "%8.8s", invoiceDate)
+	fmt.Fprintf(passFile, "%16.16s", " ")
 	if runType == "Final" {
-		fmt.Fprintf(errorFile, "Uploaded\n")
+		fmt.Fprintf(passFile, "Uploaded\n")
 	} else {
-		fmt.Fprintf(errorFile, "Passed\n")
+		fmt.Fprintf(passFile, "Passed\n")
 	}
 }
 
@@ -1078,14 +1130,14 @@ func printRemark() {
 func vDuplicateInDB() {
 	// dtInvoice, _ := time.Parse("01022006", invoiceDate)
 	// stmt := `SELECT 1 FROM apapp100 WHERE vndno=$1 AND invcn=$2 AND vchno=$3 AND apidt=$4`
-	stmt := `SELECT 1 FROM apapp100 WHERE vndno=$1 AND TRIM(invcn)=$2`
+	stmt := `SELECT vchno FROM apapp100 WHERE vndno=$1 AND TRIM(invcn)=$2`
 
 	wg := sync.WaitGroup{}
 	for _, pq := range pqConnections {
 		wg.Add(1)
 		go func(pq POSTGRE, vendorNum string, invoiceNum string) {
-			tmp := 0
-			err := pq.db.QueryRow(stmt, vendorNum, invoiceNum).Scan(&tmp)
+			vchno := 0
+			err := pq.db.QueryRow(stmt, vendorNum, invoiceNum).Scan(&vchno)
 			wg.Done()
 			if err != nil {
 				if err != sql.ErrNoRows {
@@ -1096,7 +1148,7 @@ func vDuplicateInDB() {
 				}
 			} else {
 				errorFound = true
-				errorMsg = "Duplicate Invoice # in database " + pq.dbname
+				errorMsg = fmt.Sprintf("Duplicate Invoice # (branch=%d) in database %s", vchno, pq.dbname)
 				printError()
 				return
 			}
